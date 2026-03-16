@@ -1,0 +1,18 @@
+# Build artifacts
+astrolabe
+*.fasl
+*.lx64fsl
+
+# ASDF cache
+.cache/
+
+# Database (local data, not versioned)
+*.db
+
+# Editor
+*~
+\#*\#
+.#*
+
+# OS
+.DS_Store
