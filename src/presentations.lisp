@@ -15,6 +15,12 @@
 (define-presentation-type project-presentation ()
   :description "a project")
 
+(define-presentation-type person-presentation ()
+  :description "a person")
+
+(define-presentation-type snippet-presentation ()
+  :description "a snippet")
+
 (define-presentation-type astrolabe-obj ()
   :description "any Astrolabe object")
 
@@ -64,6 +70,24 @@
     (with-drawing-options (pane :ink +green+)
       (format pane "  ~A  (~A)~%" (project-name project) (project-status project)))))
 
+(defun present-person (pane person)
+  "Display a person as a clickable presentation in PANE."
+  (with-output-as-presentation (pane person 'person-presentation)
+    (with-drawing-options (pane :ink +magenta+)
+      (format pane "  ~A~A~%"
+              (person-name person)
+              (if (person-organization person)
+                  (format nil "  (~A)" (person-organization person))
+                  "")))))
+
+(defun present-snippet (pane snippet)
+  "Display a snippet as a clickable presentation in PANE."
+  (with-output-as-presentation (pane snippet 'snippet-presentation)
+    (with-drawing-options (pane :ink +white+)
+      (format pane "  ~A  [~A]~%"
+              (obj-display-title snippet)
+              (snippet-content-type snippet)))))
+
 ;;; ─────────────────────────────────────────────────────────────────────
 ;;; Presentation translators — click-to-navigate
 ;;; ─────────────────────────────────────────────────────────────────────
@@ -86,5 +110,19 @@
     (project-presentation com-show-project astrolabe
      :gesture :select
      :documentation "Show this project")
+    (object)
+  (list object))
+
+(define-presentation-to-command-translator click-person
+    (person-presentation com-show-person astrolabe
+     :gesture :select
+     :documentation "Show this person")
+    (object)
+  (list object))
+
+(define-presentation-to-command-translator click-snippet
+    (snippet-presentation com-show-snippet astrolabe
+     :gesture :select
+     :documentation "Show this snippet")
     (object)
   (list object))

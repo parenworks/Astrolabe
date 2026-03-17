@@ -75,12 +75,13 @@ Astrolabe's core data model is built around **objects** and **links**:
 
 **Core object types:**
 
-- **Note** — Title, body, tags, timestamps, links to other objects
-- **Task** — Title, status (todo/active/done/cancelled), priority (A/B/C), due date, links
-- **Project** — Name, description, status (active/paused/complete/archived), links to tasks and notes
-- **Person** — Name, email, role, links to projects/tasks/notes
-- **Tag** — Name, color. Objects can have multiple tags.
-- **Snippet** — A captured fragment of text, code, URL, or command. Quick capture target.
+- **Note** — Title, body (markdown), format, pinned, archived, timestamps, links
+- **Task** — Title, description, status (todo/active/done/cancelled/waiting), priority (A/B/C), due date, scheduled date, effort/actual minutes, recurrence, context, subtasks, links
+- **Project** — Name, description, status (active/paused/complete/archived), priority, area, start/target dates, owner, notes, links
+- **Person** — Full CRM contact: name, email, phone, organization, job title, address, birthday, XMPP/Matrix/IRC handles, contact frequency, links
+- **Tag** — Name, color, description. Any object can have multiple tags.
+- **Snippet** — Title, content, content type, language, source. Quick capture target.
+- **Bookmark** — Pinned reference to a URL or internal object.
 
 **Link system:**
 
@@ -131,15 +132,39 @@ Astrolabe uses a three-pane layout:
 All actions are CLIM commands:
 
 ```
-Capture Note [title]        — Create a new note, auto-linked to current context
-Add Task [title]            — Create a new task
-Show [object]               — Display object in detail pane
-Search [query]              — Full-text search across all objects
-Link [source] [target]      — Create a link between two objects
-Complete Task [task]         — Mark a task as done
-Tag [object] [tag]          — Add a tag to an object
-Open Project [project]      — Navigate into a project view
-Home                        — Return to home/agenda view
+Create:
+  Capture Note [title]         — Create a note, auto-link to current context
+  Add Task [title]             — Create a task
+  New Project [name]           — Create a project
+  Add Person [name]            — Add a contact
+  Capture Snippet [content]    — Save a snippet
+
+Actions:
+  Complete Task [task]         — Mark a task done
+  Link [source] [target]       — Link two objects
+  Tag [object] [tag]           — Add a tag
+  Untag [object] [tag]         — Remove a tag
+  Edit Note [note] [body]      — Replace note body
+  Append Note [note] [text]    — Append to note body
+
+Search & Filter:
+  Search [query]               — FTS5 search across all objects
+  Filter Tag [tag]             — Show all objects with a tag
+  Show Tasks                   — All open tasks
+  Show Tasks Today             — Tasks due today or overdue
+
+Delete:
+  Delete Note/Task/Project/Person/Snippet — Soft delete
+
+Navigate:
+  Home                         — Return to home view
+  Quit                         — Exit Astrolabe
+
+Keyboard shortcuts:
+  C-n  Capture Note
+  C-t  Add Task
+  C-s  Search
+  C-h  Home
 ```
 
 Commands accept presentation arguments — click an object on screen to provide it as an argument to the current command.
@@ -184,17 +209,17 @@ astrolabe/
 ├── README.md
 ├── ROADMAP.md
 ├── astrolabe.asd           # ASDF system definition
+├── justfile                # Development task runner
 ├── src/
 │   ├── package.lisp        # Package definition
 │   ├── config.lisp         # Configuration and paths
-│   ├── db.lisp             # Database schema, migrations, queries
-│   ├── model.lisp          # Object model (note, task, project, person, tag)
-│   ├── presentations.lisp  # CLIM presentation types and translators
-│   ├── commands.lisp       # CLIM commands (capture, search, show, etc.)
-│   ├── views.lisp          # Pane display functions (home, detail, navigation)
-│   └── app.lisp            # Application frame definition and entry point
-└── docs/
-    └── DESIGN.md           # Detailed design notes
+│   ├── db.lisp             # Database schema (10 tables), migrations, FTS5 indexes
+│   ├── model.lisp          # CLOS model (note, task, project, person, snippet, bookmark, tags, links, search)
+│   ├── app.lisp            # Application frame definition
+│   ├── presentations.lisp  # CLIM presentation types and click translators
+│   ├── commands.lisp       # CLIM commands, keybindings
+│   ├── views.lisp          # Pane display functions (home, search, tasks, tag filter, detail)
+│   └── main.lisp           # Entry point: (astrolabe:run)
 ```
 
 ## License

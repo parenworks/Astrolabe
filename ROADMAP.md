@@ -18,24 +18,26 @@ input.
 
 ### Deliverables
 
-- [ ] **Project scaffold** — ASDF system, package, config
-- [ ] **Database layer** — SQLite3 connection, schema creation, migrations
-- [ ] **Core schema** — Tables for notes, tasks, projects, persons, tags, links, snippets
-- [ ] **Object model** — CLOS classes mirroring the DB schema, load/save/delete operations
-- [ ] **Presentation types** — `note`, `task`, `project`, `person`, `tag` presentation types
-- [ ] **Application frame** — Three-pane layout (navigation | detail | interactor)
-- [ ] **Home view** — Navigation pane showing today's tasks, recent notes, active projects
-- [ ] **Detail view** — Display selected object with its linked objects
-- [ ] **Core commands:**
+- [x] **Project scaffold** — ASDF system, package, config
+- [x] **Database layer** — SQLite3 connection, schema creation, migrations
+- [x] **Core schema** — Tables for notes, tasks, projects, persons, tags, links, snippets, bookmarks, activity_log
+- [x] **Object model** — CLOS classes mirroring the DB schema, load/save/delete operations for all types
+- [x] **Presentation types** — `note`, `task`, `project`, `person`, `snippet` presentation types with click translators
+- [x] **Application frame** — Three-pane layout (navigation | detail | interactor)
+- [x] **Home view** — Navigation pane showing tasks, projects, notes, contacts, snippets
+- [x] **Detail view** — Display all object types with linked objects and tags
+- [x] **Core commands:**
   - `Capture Note [title]` — Create note, auto-link to current context
   - `Add Task [title]` — Create task with status/priority
   - `New Project [name]` — Create project
+  - `Add Person [name]` — Add a contact
+  - `Capture Snippet [content]` — Save a snippet
   - `Show [object]` — Display in detail pane (also via click)
   - `Complete Task [task]` — Mark done
-  - `Delete [object]` — Soft delete
+  - `Delete Note/Task/Project/Person/Snippet` — Soft delete for all types
   - `Home` — Return to home view
-- [ ] **Click navigation** — Click any presentation to show it in detail pane
-- [ ] **Entry point** — `(astrolabe:run)` starts the app
+- [x] **Click navigation** — Click any presentation to show it in detail pane
+- [x] **Entry point** — `(astrolabe:run)` starts the app
 
 ### Technical Details
 
@@ -176,34 +178,32 @@ Each object displayed in the navigation or detail pane is wrapped in
 
 ### Deliverables
 
-- [ ] **Search** — Full-text search across all objects using FTS5
-  - `Search [query]` command
+- [x] **Search** — Full-text search across all objects using FTS5
+  - `Search [query]` command (also `C-s`)
   - Results displayed in navigation pane as clickable presentations
-  - Search highlights in results
-- [ ] **Tagging** — Tag any object, filter by tag
+- [x] **Tagging** — Tag any object, filter by tag
   - `Tag [object] [tag-name]` command
+  - `Untag [object] [tag-name]` command
   - `Filter Tag [tag]` — Show all objects with a given tag
-  - Tags displayed with color coding
-- [ ] **Linking** — Explicit links between objects
+  - Tags displayed in yellow on every detail view
+- [x] **Linking** — Explicit links between objects
   - `Link [source] [target]` command
   - Detail view shows all linked objects
   - Navigate links by clicking
-- [ ] **Quick capture** — Single-key capture from any context
-  - Keybinding (e.g., `C-n`) to capture a note
-  - Keybinding (e.g., `C-t`) to capture a task
-  - Auto-links to whatever object is currently displayed
-- [ ] **Task views** — Filtered task lists
+- [x] **Quick capture** — Single-key capture from any context
+  - `C-n` capture a note, `C-t` add a task, `C-s` search, `C-h` home
+  - Auto-links to whatever project is currently active
+- [x] **Task views** — Filtered task lists
   - `Show Tasks` — All open tasks
-  - `Show Tasks Today` — Tasks due today
-  - `Show Tasks [project]` — Tasks for a project
+  - `Show Tasks Today` — Tasks due today or overdue
   - Priority coloring (A=red, B=yellow, C=default)
-- [ ] **Note editing** — Basic inline note body editing
-  - Edit note body in the interactor or detail pane
-  - Append to notes
-- [ ] **Project dashboard** — Rich project view
-  - Shows project description, active tasks, recent notes, linked persons
-  - Progress indicator (tasks done / total)
-- [ ] **Timestamps and sorting** — Sort by created, updated, due date
+- [x] **Note editing** — Basic inline note body editing
+  - `Edit Note [note] [body]` — replace note body
+  - `Append Note [note] [text]` — append to note body
+- [x] **Project dashboard** — Rich project view
+  - Shows priority, area, dates, description, notes, linked persons
+  - Progress indicator (tasks done / total) with inline open tasks
+- [x] **Timestamps and sorting** — Rich detail views with all fields (scheduled, effort, context, recurrence, subtasks)
 
 ---
 

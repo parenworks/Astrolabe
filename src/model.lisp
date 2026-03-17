@@ -556,6 +556,121 @@
     (t nil)))
 
 ;;; ─────────────────────────────────────────────────────────────────────
+;;; Search (FTS5)
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defun search-notes (query &optional (limit 20))
+  "Search notes via FTS5. Returns note objects."
+  (mapcar #'make-note-from-row
+          (db-query (format nil "SELECT ~A FROM notes WHERE id IN
+                     (SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?)
+                     AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?"
+                            *note-cols*)
+                    query limit)))
+
+(defun search-tasks (query &optional (limit 20))
+  "Search tasks via FTS5. Returns task objects."
+  (mapcar #'make-task-from-row
+          (db-query (format nil "SELECT ~A FROM tasks WHERE id IN
+                     (SELECT rowid FROM tasks_fts WHERE tasks_fts MATCH ?)
+                     AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?"
+                            *task-cols*)
+                    query limit)))
+
+(defun search-projects (query &optional (limit 20))
+  "Search projects via FTS5. Returns project objects."
+  (mapcar #'make-project-from-row
+          (db-query (format nil "SELECT ~A FROM projects WHERE id IN
+                     (SELECT rowid FROM projects_fts WHERE projects_fts MATCH ?)
+                     AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?"
+                            *project-cols*)
+                    query limit)))
+
+(defun search-persons (query &optional (limit 20))
+  "Search persons via FTS5. Returns person objects."
+  (mapcar #'make-person-from-row
+          (db-query (format nil "SELECT ~A FROM persons WHERE id IN
+                     (SELECT rowid FROM persons_fts WHERE persons_fts MATCH ?)
+                     AND deleted_at IS NULL ORDER BY name ASC LIMIT ?"
+                            *person-cols*)
+                    query limit)))
+
+(defun search-snippets (query &optional (limit 20))
+  "Search snippets via FTS5. Returns snippet objects."
+  (mapcar #'make-snippet-from-row
+          (db-query (format nil "SELECT ~A FROM snippets WHERE id IN
+                     (SELECT rowid FROM snippets_fts WHERE snippets_fts MATCH ?)
+                     AND deleted_at IS NULL ORDER BY created_at DESC LIMIT ?"
+                            *snippet-cols*)
+                    query limit)))
+
+(defun search-all (query &optional (limit 10))
+  "Search all object types. Returns a list of mixed objects."
+  (let ((results nil))
+    (dolist (note (search-notes query limit)) (push note results))
+    (dolist (task (search-tasks query limit)) (push task results))
+    (dolist (project (search-projects query limit)) (push project results))
+    (dolist (person (search-persons query limit)) (push person results))
+    (dolist (snippet (search-snippets query limit)) (push snippet results))
+    (nreverse results)))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Tags
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defun create-tag (name &optional color description)
+  "Create a tag. Returns the tag row (id name color description created_at)."
+  (let ((existing (db-query-single "SELECT id, name, color, description, created_at
+                                    FROM tags WHERE name=?" name)))
+    (if existing
+        existing
+        (progn
+          (db-execute "INSERT INTO tags (name, color, description) VALUES (?,?,?)"
+                      name color (or description ""))
+          (db-query-single "SELECT id, name, color, description, created_at
+                            FROM tags WHERE id=?" (db-last-insert-id))))))
+
+(defun load-tag-by-name (name)
+  "Load a tag by its name."
+  (db-query-single "SELECT id, name, color, description, created_at FROM tags WHERE name=?" name))
+
+(defun load-all-tags ()
+  "Load all tags."
+  (db-query "SELECT id, name, color, description, created_at FROM tags ORDER BY name ASC"))
+
+(defun tag-object (object tag-name)
+  "Apply a tag to an object. Creates the tag if it doesn't exist."
+  (let ((tag (create-tag tag-name)))
+    (db-execute "INSERT OR IGNORE INTO object_tags (object_type, object_id, tag_id)
+                 VALUES (?,?,?)"
+                (obj-type-name object) (obj-id object) (first tag))))
+
+(defun untag-object (object tag-name)
+  "Remove a tag from an object."
+  (let ((tag (load-tag-by-name tag-name)))
+    (when tag
+      (db-execute "DELETE FROM object_tags WHERE object_type=? AND object_id=? AND tag_id=?"
+                  (obj-type-name object) (obj-id object) (first tag)))))
+
+(defun load-tags-for-object (object)
+  "Load all tags for an object. Returns a list of (id name color description) rows."
+  (db-query "SELECT t.id, t.name, t.color, t.description
+             FROM tags t
+             JOIN object_tags ot ON ot.tag_id = t.id
+             WHERE ot.object_type=? AND ot.object_id=?
+             ORDER BY t.name ASC"
+            (obj-type-name object) (obj-id object)))
+
+(defun load-objects-by-tag (tag-name &optional (limit 50))
+  "Load all objects with a given tag. Returns a list of (object_type object_id) rows."
+  (db-query "SELECT ot.object_type, ot.object_id
+             FROM object_tags ot
+             JOIN tags t ON t.id = ot.tag_id
+             WHERE t.name=?
+             ORDER BY ot.created_at DESC LIMIT ?"
+            tag-name limit))
+
+;;; ─────────────────────────────────────────────────────────────────────
 ;;; Activity log
 ;;; ─────────────────────────────────────────────────────────────────────
 
