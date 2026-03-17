@@ -801,6 +801,310 @@
   (format t "~&LLM model set to: ~A~%" model-name))
 
 ;;; ─────────────────────────────────────────────────────────────────────
+;;; Phase 6: Extended object commands
+;;; ─────────────────────────────────────────────────────────────────────
+
+;; ── Journal ──────────────────────────────────────────────────────────
+
+(define-astrolabe-command (com-journal :name t :menu t) ()
+  (let* ((today (subseq (local-time:format-timestring nil (local-time:now)
+                          :format '((:year 4) #\- (:month 2) #\- (:day 2)))
+                        0 10))
+         (existing (load-journal-entry-by-date today)))
+    (if existing
+        (progn
+          (format t "~&Appending to today's journal...~%")
+          (let ((text (accept 'string :prompt "text")))
+            (setf (je-body existing)
+                  (concatenate 'string (je-body existing) (string #\Newline) text))
+            (save-journal-entry existing)
+            (setf *current-object* existing)
+            (format t "~&Journal updated.~%")))
+        (progn
+          (format t "~&New journal entry for ~A~%" today)
+          (let ((text (accept 'string :prompt "text")))
+            (let ((je (make-instance 'journal-entry :entry-date today :body text)))
+              (save-journal-entry je)
+              (setf *current-object* je)
+              (format t "~&Journal entry created.~%")))))))
+
+(define-astrolabe-command (com-show-journal :name t :menu t) ()
+  (setf *current-view* :journal)
+  (setf *current-object* nil))
+
+(define-astrolabe-command (com-show-journal-entry :name t :menu t)
+    ((je 'journal-presentation :prompt "entry"))
+  (setf *current-object* je))
+
+;; ── Document ─────────────────────────────────────────────────────────
+
+(define-astrolabe-command (com-add-document :name t :menu t)
+    ((title 'string :prompt "title"))
+  (let* ((path (accept 'string :prompt "file path" :default ""))
+         (ftype (accept 'string :prompt "type (pdf/md/txt)" :default ""))
+         (doc (make-instance 'document :title title
+                             :file-path (if (> (length path) 0) path nil)
+                             :file-type (if (> (length ftype) 0) ftype nil))))
+    (save-document doc)
+    (setf *current-object* doc)
+    (format t "~&Document '~A' created.~%" title)))
+
+(define-astrolabe-command (com-show-documents :name t :menu t) ()
+  (setf *current-view* :documents)
+  (setf *current-object* nil))
+
+(define-astrolabe-command (com-show-document :name t :menu t)
+    ((doc 'document-presentation :prompt "document"))
+  (setf *current-object* doc))
+
+(define-astrolabe-command (com-delete-document :name t :menu t)
+    ((doc 'document-presentation :prompt "document"))
+  (delete-document doc)
+  (when (eq *current-object* doc) (setf *current-object* nil))
+  (format t "~&Document deleted.~%"))
+
+;; ── Event ────────────────────────────────────────────────────────────
+
+(define-astrolabe-command (com-add-event :name t :menu t)
+    ((title 'string :prompt "title"))
+  (let* ((start (accept 'string :prompt "start (YYYY-MM-DD HH:MM)"))
+         (end-str (accept 'string :prompt "end (or empty)" :default ""))
+         (loc (accept 'string :prompt "location (or empty)" :default ""))
+         (evt (make-instance 'event :title title :start-time start
+                             :end-time (if (> (length end-str) 0) end-str nil)
+                             :location (if (> (length loc) 0) loc nil))))
+    (save-event evt)
+    (setf *current-object* evt)
+    (format t "~&Event '~A' created.~%" title)))
+
+(define-astrolabe-command (com-show-events :name t :menu t) ()
+  (setf *current-view* :events)
+  (setf *current-object* nil))
+
+(define-astrolabe-command (com-show-event :name t :menu t)
+    ((evt 'event-presentation :prompt "event"))
+  (setf *current-object* evt))
+
+(define-astrolabe-command (com-cancel-event :name t :menu t)
+    ((evt 'event-presentation :prompt "event"))
+  (setf (event-status evt) "cancelled")
+  (save-event evt)
+  (format t "~&Event cancelled.~%"))
+
+(define-astrolabe-command (com-delete-event :name t :menu t)
+    ((evt 'event-presentation :prompt "event"))
+  (delete-event evt)
+  (when (eq *current-object* evt) (setf *current-object* nil))
+  (format t "~&Event deleted.~%"))
+
+;; ── Invoice ──────────────────────────────────────────────────────────
+
+(define-astrolabe-command (com-add-invoice :name t :menu t)
+    ((title 'string :prompt "title"))
+  (let* ((itype (accept 'string :prompt "type (invoice/contract/quote/receipt)" :default "invoice"))
+         (amount-str (accept 'string :prompt "amount (or empty)" :default ""))
+         (currency (accept 'string :prompt "currency" :default "USD"))
+         (counterparty (accept 'string :prompt "counterparty (or empty)" :default ""))
+         (due (accept 'string :prompt "due date YYYY-MM-DD (or empty)" :default ""))
+         (inv (make-instance 'invoice :title title :inv-type itype
+                             :amount (if (> (length amount-str) 0) (read-from-string amount-str) nil)
+                             :currency currency
+                             :counterparty (if (> (length counterparty) 0) counterparty nil)
+                             :due-date (if (> (length due) 0) due nil))))
+    (save-invoice inv)
+    (setf *current-object* inv)
+    (format t "~&Invoice '~A' created.~%" title)))
+
+(define-astrolabe-command (com-show-invoices :name t :menu t) ()
+  (setf *current-view* :invoices)
+  (setf *current-object* nil))
+
+(define-astrolabe-command (com-show-invoice :name t :menu t)
+    ((inv 'invoice-presentation :prompt "invoice"))
+  (setf *current-object* inv))
+
+(define-astrolabe-command (com-mark-paid :name t :menu t)
+    ((inv 'invoice-presentation :prompt "invoice"))
+  (let ((today (subseq (local-time:format-timestring nil (local-time:now)
+                          :format '((:year 4) #\- (:month 2) #\- (:day 2)))
+                        0 10)))
+    (setf (inv-status inv) "paid")
+    (setf (inv-paid-date inv) today)
+    (save-invoice inv)
+    (format t "~&Invoice marked as paid.~%")))
+
+(define-astrolabe-command (com-delete-invoice :name t :menu t)
+    ((inv 'invoice-presentation :prompt "invoice"))
+  (delete-invoice inv)
+  (when (eq *current-object* inv) (setf *current-object* nil))
+  (format t "~&Invoice deleted.~%"))
+
+;; ── Ticket ───────────────────────────────────────────────────────────
+
+(define-astrolabe-command (com-file-ticket :name t :menu t)
+    ((title 'string :prompt "title"))
+  (let* ((priority (accept 'string :prompt "priority (A/B/C)" :default "B"))
+         (desc (accept 'string :prompt "description" :default ""))
+         (tkt (make-instance 'ticket :title title :priority priority
+                             :description desc)))
+    (save-ticket tkt)
+    (setf *current-object* tkt)
+    (format t "~&Ticket '~A' filed.~%" title)))
+
+(define-astrolabe-command (com-show-tickets :name t :menu t) ()
+  (setf *current-view* :tickets)
+  (setf *current-object* nil))
+
+(define-astrolabe-command (com-show-ticket :name t :menu t)
+    ((tkt 'ticket-presentation :prompt "ticket"))
+  (setf *current-object* tkt))
+
+(define-astrolabe-command (com-resolve-ticket :name t :menu t)
+    ((tkt 'ticket-presentation :prompt "ticket"))
+  (let ((resolution (accept 'string :prompt "resolution" :default "")))
+    (resolve-ticket tkt (if (> (length resolution) 0) resolution nil))
+    (format t "~&Ticket resolved.~%")))
+
+(define-astrolabe-command (com-delete-ticket :name t :menu t)
+    ((tkt 'ticket-presentation :prompt "ticket"))
+  (delete-ticket tkt)
+  (when (eq *current-object* tkt) (setf *current-object* nil))
+  (format t "~&Ticket deleted.~%"))
+
+;; ── Repository ───────────────────────────────────────────────────────
+
+(define-astrolabe-command (com-add-repository :name t :menu t)
+    ((name 'string :prompt "name"))
+  (let* ((path (accept 'string :prompt "local path" :default ""))
+         (remote (accept 'string :prompt "remote URL (or empty)" :default ""))
+         (branch (accept 'string :prompt "branch" :default "main"))
+         (repo (make-instance 'repository :name name
+                              :path (if (> (length path) 0) path nil)
+                              :remote-url (if (> (length remote) 0) remote nil)
+                              :branch branch)))
+    (save-repository repo)
+    (setf *current-object* repo)
+    (format t "~&Repository '~A' added.~%" name)))
+
+(define-astrolabe-command (com-show-repositories :name t :menu t) ()
+  (setf *current-view* :repositories)
+  (setf *current-object* nil))
+
+(define-astrolabe-command (com-show-repository :name t :menu t)
+    ((repo 'repository-presentation :prompt "repository"))
+  (setf *current-object* repo))
+
+(define-astrolabe-command (com-repo-log :name t :menu t)
+    ((repo 'repository-presentation :prompt "repository"))
+  (let ((commits (repo-recent-commits repo 15)))
+    (if commits
+        (progn
+          (setf *shell-command* (format nil "git log --oneline -15 (~A)" (repo-name repo)))
+          (setf *shell-output* (format nil "~{~A~^~%~}" commits))
+          (setf *shell-exit-code* 0)
+          (setf *current-view* :shell)
+          (setf *current-object* nil)
+          (format t "~&~D commits.~%" (length commits)))
+        (format t "~&Could not read git log (check path).~%"))))
+
+(define-astrolabe-command (com-delete-repository :name t :menu t)
+    ((repo 'repository-presentation :prompt "repository"))
+  (delete-repository repo)
+  (when (eq *current-object* repo) (setf *current-object* nil))
+  (format t "~&Repository deleted.~%"))
+
+;; ── Server ───────────────────────────────────────────────────────────
+
+(define-astrolabe-command (com-add-server :name t :menu t)
+    ((name 'string :prompt "name"))
+  (let* ((hostname (accept 'string :prompt "hostname"))
+         (port-str (accept 'string :prompt "SSH port" :default "22"))
+         (user (accept 'string :prompt "username (or empty)" :default ""))
+         (srv (make-instance 'server :name name :hostname hostname
+                             :port (parse-integer port-str :junk-allowed t)
+                             :username (if (> (length user) 0) user nil))))
+    (save-server srv)
+    (setf *current-object* srv)
+    (format t "~&Server '~A' added.~%" name)))
+
+(define-astrolabe-command (com-show-servers :name t :menu t) ()
+  (setf *current-view* :servers)
+  (setf *current-object* nil))
+
+(define-astrolabe-command (com-show-server :name t :menu t)
+    ((srv 'server-presentation :prompt "server"))
+  (setf *current-object* srv))
+
+(define-astrolabe-command (com-ping-server :name t :menu t)
+    ((srv 'server-presentation :prompt "server"))
+  (format t "~&Pinging ~A...~%" (server-hostname srv))
+  (if (ping-server srv)
+      (format t "~&~A is ONLINE.~%" (server-name srv))
+      (format t "~&~A is OFFLINE.~%" (server-name srv))))
+
+(define-astrolabe-command (com-delete-server :name t :menu t)
+    ((srv 'server-presentation :prompt "server"))
+  (delete-server srv)
+  (when (eq *current-object* srv) (setf *current-object* nil))
+  (format t "~&Server deleted.~%"))
+
+;; ── Habit ────────────────────────────────────────────────────────────
+
+(define-astrolabe-command (com-add-habit :name t :menu t)
+    ((name 'string :prompt "habit name"))
+  (let* ((freq (accept 'string :prompt "frequency (daily/weekly/monthly)" :default "daily"))
+         (hab (make-instance 'habit :name name :frequency freq)))
+    (save-habit hab)
+    (setf *current-object* hab)
+    (format t "~&Habit '~A' created.~%" name)))
+
+(define-astrolabe-command (com-show-habits :name t :menu t) ()
+  (setf *current-view* :habits)
+  (setf *current-object* nil))
+
+(define-astrolabe-command (com-show-habit :name t :menu t)
+    ((hab 'habit-presentation :prompt "habit"))
+  (setf *current-object* hab))
+
+(define-astrolabe-command (com-log-habit :name t :menu t)
+    ((hab 'habit-presentation :prompt "habit"))
+  (let ((streak (log-habit hab)))
+    (format t "~&Logged! Streak: ~D~A~%"
+            streak
+            (if (= streak (habit-best-streak hab)) " (personal best!)" ""))))
+
+(define-astrolabe-command (com-delete-habit :name t :menu t)
+    ((hab 'habit-presentation :prompt "habit"))
+  (delete-habit hab)
+  (when (eq *current-object* hab) (setf *current-object* nil))
+  (format t "~&Habit deleted.~%"))
+
+;; ── Bookmark ─────────────────────────────────────────────────────────
+
+(define-astrolabe-command (com-add-bookmark :name t :menu t)
+    ((title 'string :prompt "title"))
+  (let* ((url (accept 'string :prompt "URL (or empty)" :default ""))
+         (bm (make-instance 'bookmark :title title
+                            :url (if (> (length url) 0) url nil))))
+    (save-bookmark bm)
+    (setf *current-object* bm)
+    (format t "~&Bookmark '~A' saved.~%" title)))
+
+(define-astrolabe-command (com-show-bookmarks :name t :menu t) ()
+  (setf *current-view* :bookmarks)
+  (setf *current-object* nil))
+
+(define-astrolabe-command (com-show-bookmark :name t :menu t)
+    ((bm 'bookmark-presentation :prompt "bookmark"))
+  (setf *current-object* bm))
+
+(define-astrolabe-command (com-delete-bookmark :name t :menu t)
+    ((bm 'bookmark-presentation :prompt "bookmark"))
+  (delete-bookmark bm)
+  (when (eq *current-object* bm) (setf *current-object* nil))
+  (format t "~&Bookmark deleted.~%"))
+
+;;; ─────────────────────────────────────────────────────────────────────
 ;;; Reload user commands
 ;;; ─────────────────────────────────────────────────────────────────────
 

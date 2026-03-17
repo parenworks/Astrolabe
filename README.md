@@ -211,6 +211,32 @@ AI (requires Ollama):
   Similar [object]             — Find related objects via LLM
   Set Model [name]             — Switch Ollama model
 
+Extended Objects:
+  Journal                      — Create/append today's journal entry
+  Show Journal                 — Browse journal entries
+  Add Document [title]         — Register a file reference
+  Show Documents               — Browse documents
+  Add Event [title]            — Create calendar event
+  Show Events                  — Browse events
+  Cancel Event [event]         — Cancel an event
+  Add Invoice [title]          — Create invoice/contract
+  Show Invoices                — Browse invoices
+  Mark Paid [invoice]          — Mark invoice paid
+  File Ticket [title]          — File an issue ticket
+  Show Tickets                 — Browse open tickets
+  Resolve Ticket [ticket]      — Close with resolution
+  Add Repository [name]        — Register a git repo
+  Show Repositories            — Browse repositories
+  Repo Log [repo]              — Show recent commits
+  Add Server [name]            — Register a server/host
+  Show Servers                 — Browse servers
+  Ping Server [server]         — Check server status
+  Add Habit [name]             — Create a recurring habit
+  Show Habits                  — Browse active habits
+  Log Habit [habit]            — Log today's entry
+  Add Bookmark [title]         — Save a bookmark
+  Show Bookmarks               — Browse bookmarks
+
 Navigate:
   Home                         — Return to home view
   Back                         — Go to previous view

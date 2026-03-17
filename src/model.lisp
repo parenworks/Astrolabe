@@ -470,60 +470,6 @@
     (db-execute "UPDATE snippets SET deleted_at=datetime('now') WHERE id=?" (obj-id snippet))))
 
 ;;; ─────────────────────────────────────────────────────────────────────
-;;; Bookmark
-;;; ─────────────────────────────────────────────────────────────────────
-
-(defclass bookmark ()
-  ((id          :initarg :id          :accessor bookmark-id          :initform nil)
-   (title       :initarg :title       :accessor bookmark-title       :initform "")
-   (url         :initarg :url         :accessor bookmark-url         :initform nil)
-   (object-type :initarg :object-type :accessor bookmark-object-type :initform nil)
-   (object-id   :initarg :object-id   :accessor bookmark-object-id   :initform nil)
-   (sort-order  :initarg :sort-order  :accessor bookmark-sort-order  :initform 0)
-   (icon        :initarg :icon        :accessor bookmark-icon        :initform nil)
-   (description :initarg :description :accessor bookmark-description :initform "")
-   (created-at  :initarg :created-at  :accessor bookmark-created-at  :initform nil)
-   (deleted-at  :initarg :deleted-at  :accessor bookmark-deleted-at  :initform nil)))
-
-(defparameter *bookmark-cols*
-  "id, title, url, object_type, object_id, sort_order, icon, description, created_at, deleted_at")
-
-(defun make-bookmark-from-row (row)
-  (make-instance 'bookmark
-                 :id          (nth 0 row) :title       (nth 1 row)
-                 :url         (nth 2 row) :object-type (nth 3 row)
-                 :object-id   (nth 4 row) :sort-order  (nth 5 row)
-                 :icon        (nth 6 row) :description (nth 7 row)
-                 :created-at  (nth 8 row) :deleted-at  (nth 9 row)))
-
-(defun save-bookmark (bm)
-  (if (bookmark-id bm)
-      (progn
-        (db-execute "UPDATE bookmarks SET title=?, url=?, object_type=?, object_id=?,
-                     sort_order=?, icon=?, description=? WHERE id=?"
-                    (bookmark-title bm) (bookmark-url bm) (bookmark-object-type bm)
-                    (bookmark-object-id bm) (bookmark-sort-order bm)
-                    (bookmark-icon bm) (bookmark-description bm) (bookmark-id bm))
-        bm)
-      (progn
-        (db-execute "INSERT INTO bookmarks (title, url, object_type, object_id, sort_order, icon, description)
-                     VALUES (?,?,?,?,?,?,?)"
-                    (bookmark-title bm) (bookmark-url bm) (bookmark-object-type bm)
-                    (bookmark-object-id bm) (bookmark-sort-order bm)
-                    (bookmark-icon bm) (bookmark-description bm))
-        (setf (bookmark-id bm) (db-last-insert-id))
-        bm)))
-
-(defun load-bookmarks (&optional (limit 20))
-  (mapcar #'make-bookmark-from-row
-          (db-query (format nil "SELECT ~A FROM bookmarks WHERE deleted_at IS NULL
-                     ORDER BY sort_order ASC, created_at DESC LIMIT ?" *bookmark-cols*) limit)))
-
-(defun delete-bookmark (bm)
-  (when (bookmark-id bm)
-    (db-execute "UPDATE bookmarks SET deleted_at=datetime('now') WHERE id=?" (bookmark-id bm))))
-
-;;; ─────────────────────────────────────────────────────────────────────
 ;;; Links
 ;;; ─────────────────────────────────────────────────────────────────────
 
@@ -555,6 +501,15 @@
     ((string-equal type-name "snippet")      (load-snippet id))
     ((string-equal type-name "conversation") (load-conversation id))
     ((string-equal type-name "feed")         (load-feed id))
+    ((string-equal type-name "journal")      (load-journal-entry id))
+    ((string-equal type-name "document")     (load-document id))
+    ((string-equal type-name "event")        (load-event id))
+    ((string-equal type-name "invoice")      (load-invoice id))
+    ((string-equal type-name "ticket")       (load-ticket id))
+    ((string-equal type-name "repository")   (load-repository id))
+    ((string-equal type-name "server")       (load-server id))
+    ((string-equal type-name "habit")        (load-habit id))
+    ((string-equal type-name "bookmark")     (load-bookmark id))
     (t nil)))
 
 ;;; ─────────────────────────────────────────────────────────────────────
@@ -693,26 +648,6 @@
                                    *snippet-cols*) cutoff limit))
       (push (make-snippet-from-row row) results))
     (nreverse results)))
-
-;;; ─────────────────────────────────────────────────────────────────────
-;;; Bookmark helpers for pinning astrolabe objects
-;;; ─────────────────────────────────────────────────────────────────────
-
-(defun bookmark-object (object)
-  "Create a bookmark pointing to an astrolabe object."
-  (save-bookmark (make-instance 'bookmark
-                                :title (obj-display-title object)
-                                :object-type (obj-type-name object)
-                                :object-id (obj-id object))))
-
-(defun unbookmark-object (object)
-  "Remove bookmark for an astrolabe object."
-  (let ((row (db-query-single
-              (format nil "SELECT ~A FROM bookmarks WHERE object_type=? AND object_id=? AND deleted_at IS NULL"
-                      *bookmark-cols*)
-              (obj-type-name object) (obj-id object))))
-    (when row
-      (delete-bookmark (make-bookmark-from-row row)))))
 
 ;;; ─────────────────────────────────────────────────────────────────────
 ;;; Tags
@@ -1109,3 +1044,698 @@
 (defun mark-all-notifications-read ()
   "Dismiss all notifications."
   (db-execute "UPDATE notifications SET read=1 WHERE read=0"))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Bookmark
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defclass bookmark (astrolabe-object)
+  ((title       :initarg :title       :accessor bm-title       :initform "")
+   (url         :initarg :url         :accessor bm-url         :initform nil)
+   (object-type :initarg :object-type :accessor bm-object-type :initform nil)
+   (object-id   :initarg :object-id   :accessor bm-object-id   :initform nil)
+   (sort-order  :initarg :sort-order  :accessor bm-sort-order  :initform 0)
+   (icon        :initarg :icon        :accessor bm-icon        :initform nil)
+   (description :initarg :description :accessor bm-description :initform "")))
+
+(defmethod obj-type-name ((obj bookmark)) "bookmark")
+(defmethod obj-display-title ((obj bookmark)) (bm-title obj))
+
+(defparameter *bm-cols*
+  "id, title, url, object_type, object_id, sort_order, icon, description, created_at, deleted_at")
+
+(defun make-bm-from-row (row)
+  (make-instance 'bookmark
+                 :id (nth 0 row) :title (nth 1 row) :url (nth 2 row)
+                 :object-type (nth 3 row) :object-id (nth 4 row)
+                 :sort-order (nth 5 row) :icon (nth 6 row)
+                 :description (nth 7 row) :created-at (nth 8 row)
+                 :deleted-at (nth 9 row)))
+
+(defun save-bookmark (bm)
+  (if (obj-id bm)
+      (progn
+        (db-execute "UPDATE bookmarks SET title=?, url=?, object_type=?, object_id=?,
+                     sort_order=?, icon=?, description=? WHERE id=?"
+                    (bm-title bm) (bm-url bm) (bm-object-type bm)
+                    (bm-object-id bm) (bm-sort-order bm) (bm-icon bm)
+                    (bm-description bm) (obj-id bm))
+        bm)
+      (progn
+        (db-execute "INSERT INTO bookmarks (title, url, object_type, object_id, sort_order, icon, description)
+                     VALUES (?,?,?,?,?,?,?)"
+                    (bm-title bm) (bm-url bm) (bm-object-type bm)
+                    (bm-object-id bm) (bm-sort-order bm) (bm-icon bm)
+                    (bm-description bm))
+        (setf (obj-id bm) (db-last-insert-id))
+        bm)))
+
+(defun load-bookmark (id)
+  (let ((row (db-query-single
+              (format nil "SELECT ~A FROM bookmarks WHERE id=? AND deleted_at IS NULL" *bm-cols*) id)))
+    (when row (make-bm-from-row row))))
+
+(defun load-bookmarks (&optional (limit 50))
+  (mapcar #'make-bm-from-row
+          (db-query (format nil "SELECT ~A FROM bookmarks WHERE deleted_at IS NULL
+                     ORDER BY sort_order ASC, created_at DESC LIMIT ?" *bm-cols*) limit)))
+
+(defun delete-bookmark (bm)
+  (when (obj-id bm)
+    (db-execute "UPDATE bookmarks SET deleted_at=datetime('now') WHERE id=?" (obj-id bm))))
+
+(defun bookmark-object (object)
+  "Create a bookmark pointing to an astrolabe object."
+  (save-bookmark (make-instance 'bookmark
+                                :title (obj-display-title object)
+                                :object-type (obj-type-name object)
+                                :object-id (obj-id object))))
+
+(defun unbookmark-object (object)
+  "Remove bookmark for an astrolabe object."
+  (let ((row (db-query-single
+              (format nil "SELECT ~A FROM bookmarks WHERE object_type=? AND object_id=? AND deleted_at IS NULL"
+                      *bm-cols*)
+              (obj-type-name object) (obj-id object))))
+    (when row
+      (delete-bookmark (make-bm-from-row row)))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Journal Entry
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defclass journal-entry (astrolabe-object)
+  ((entry-date :initarg :entry-date :accessor je-entry-date :initform nil)
+   (title      :initarg :title      :accessor je-title      :initform "")
+   (body       :initarg :body       :accessor je-body       :initform "")
+   (mood       :initarg :mood       :accessor je-mood       :initform nil)
+   (tags       :initarg :tags       :accessor je-tags       :initform "")))
+
+(defmethod obj-type-name ((obj journal-entry)) "journal")
+(defmethod obj-display-title ((obj journal-entry))
+  (if (and (je-title obj) (> (length (je-title obj)) 0))
+      (format nil "~A — ~A" (or (je-entry-date obj) "") (je-title obj))
+      (or (je-entry-date obj) "Journal")))
+
+(defparameter *je-cols*
+  "id, entry_date, title, body, mood, tags, created_at, updated_at, deleted_at")
+
+(defun make-je-from-row (row)
+  (make-instance 'journal-entry
+                 :id (nth 0 row) :entry-date (nth 1 row) :title (nth 2 row)
+                 :body (nth 3 row) :mood (nth 4 row) :tags (nth 5 row)
+                 :created-at (nth 6 row) :updated-at (nth 7 row) :deleted-at (nth 8 row)))
+
+(defun save-journal-entry (je)
+  (if (obj-id je)
+      (progn
+        (db-execute "UPDATE journal_entries SET entry_date=?, title=?, body=?, mood=?, tags=?,
+                     updated_at=datetime('now') WHERE id=?"
+                    (je-entry-date je) (je-title je) (je-body je) (je-mood je) (je-tags je)
+                    (obj-id je))
+        je)
+      (progn
+        (db-execute "INSERT INTO journal_entries (entry_date, title, body, mood, tags) VALUES (?,?,?,?,?)"
+                    (je-entry-date je) (je-title je) (je-body je) (je-mood je) (je-tags je))
+        (setf (obj-id je) (db-last-insert-id))
+        (db-execute "INSERT INTO journal_fts (rowid, title, body) VALUES (?,?,?)"
+                    (obj-id je) (je-title je) (je-body je))
+        je)))
+
+(defun load-journal-entry (id)
+  (let ((row (db-query-single
+              (format nil "SELECT ~A FROM journal_entries WHERE id=? AND deleted_at IS NULL" *je-cols*) id)))
+    (when row (make-je-from-row row))))
+
+(defun load-journal-entry-by-date (date-str)
+  "Load journal entry for a specific date (YYYY-MM-DD)."
+  (let ((row (db-query-single
+              (format nil "SELECT ~A FROM journal_entries WHERE entry_date=? AND deleted_at IS NULL" *je-cols*) date-str)))
+    (when row (make-je-from-row row))))
+
+(defun load-journal-entries (&optional (limit 30))
+  (mapcar #'make-je-from-row
+          (db-query (format nil "SELECT ~A FROM journal_entries WHERE deleted_at IS NULL
+                     ORDER BY entry_date DESC LIMIT ?" *je-cols*) limit)))
+
+(defun delete-journal-entry (je)
+  (when (obj-id je)
+    (db-execute "UPDATE journal_entries SET deleted_at=datetime('now') WHERE id=?" (obj-id je))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Document
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defclass document (astrolabe-object)
+  ((title       :initarg :title       :accessor doc-title       :initform "")
+   (file-path   :initarg :file-path   :accessor doc-file-path   :initform nil)
+   (file-type   :initarg :file-type   :accessor doc-file-type   :initform nil)
+   (file-size   :initarg :file-size   :accessor doc-file-size   :initform nil)
+   (description :initarg :description :accessor doc-description :initform "")
+   (version     :initarg :version     :accessor doc-version     :initform nil)
+   (notes       :initarg :notes       :accessor doc-notes       :initform "")
+   (pinned      :initarg :pinned      :accessor doc-pinned      :initform 0)))
+
+(defmethod obj-type-name ((obj document)) "document")
+(defmethod obj-display-title ((obj document)) (doc-title obj))
+
+(defparameter *doc-cols*
+  "id, title, file_path, file_type, file_size, description, version, notes, pinned,
+   created_at, updated_at, deleted_at")
+
+(defun make-doc-from-row (row)
+  (make-instance 'document
+                 :id (nth 0 row) :title (nth 1 row) :file-path (nth 2 row)
+                 :file-type (nth 3 row) :file-size (nth 4 row) :description (nth 5 row)
+                 :version (nth 6 row) :notes (nth 7 row) :pinned (nth 8 row)
+                 :created-at (nth 9 row) :updated-at (nth 10 row) :deleted-at (nth 11 row)))
+
+(defun save-document (doc)
+  (if (obj-id doc)
+      (progn
+        (db-execute "UPDATE documents SET title=?, file_path=?, file_type=?, file_size=?,
+                     description=?, version=?, notes=?, pinned=?,
+                     updated_at=datetime('now') WHERE id=?"
+                    (doc-title doc) (doc-file-path doc) (doc-file-type doc)
+                    (doc-file-size doc) (doc-description doc) (doc-version doc)
+                    (doc-notes doc) (doc-pinned doc) (obj-id doc))
+        doc)
+      (progn
+        (db-execute "INSERT INTO documents (title, file_path, file_type, file_size, description, version, notes, pinned)
+                     VALUES (?,?,?,?,?,?,?,?)"
+                    (doc-title doc) (doc-file-path doc) (doc-file-type doc)
+                    (doc-file-size doc) (doc-description doc) (doc-version doc)
+                    (doc-notes doc) (doc-pinned doc))
+        (setf (obj-id doc) (db-last-insert-id))
+        (db-execute "INSERT INTO documents_fts (rowid, title, description, notes) VALUES (?,?,?,?)"
+                    (obj-id doc) (doc-title doc) (doc-description doc) (doc-notes doc))
+        doc)))
+
+(defun load-document (id)
+  (let ((row (db-query-single
+              (format nil "SELECT ~A FROM documents WHERE id=? AND deleted_at IS NULL" *doc-cols*) id)))
+    (when row (make-doc-from-row row))))
+
+(defun load-documents (&optional (limit 30))
+  (mapcar #'make-doc-from-row
+          (db-query (format nil "SELECT ~A FROM documents WHERE deleted_at IS NULL
+                     ORDER BY pinned DESC, updated_at DESC LIMIT ?" *doc-cols*) limit)))
+
+(defun delete-document (doc)
+  (when (obj-id doc)
+    (db-execute "UPDATE documents SET deleted_at=datetime('now') WHERE id=?" (obj-id doc))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Event
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defclass event (astrolabe-object)
+  ((title            :initarg :title            :accessor event-title            :initform "")
+   (description      :initarg :description      :accessor event-description      :initform "")
+   (location         :initarg :location         :accessor event-location         :initform nil)
+   (start-time       :initarg :start-time       :accessor event-start-time       :initform nil)
+   (end-time         :initarg :end-time         :accessor event-end-time         :initform nil)
+   (all-day          :initarg :all-day          :accessor event-all-day          :initform 0)
+   (recurrence       :initarg :recurrence       :accessor event-recurrence       :initform nil)
+   (reminder-minutes :initarg :reminder-minutes :accessor event-reminder-minutes :initform nil)
+   (status           :initarg :status           :accessor event-status           :initform "scheduled")
+   (notes            :initarg :notes            :accessor event-notes            :initform "")))
+
+(defmethod obj-type-name ((obj event)) "event")
+(defmethod obj-display-title ((obj event)) (event-title obj))
+
+(defparameter *event-cols*
+  "id, title, description, location, start_time, end_time, all_day, recurrence,
+   reminder_minutes, status, notes, created_at, updated_at, deleted_at")
+
+(defun make-event-from-row (row)
+  (make-instance 'event
+                 :id (nth 0 row) :title (nth 1 row) :description (nth 2 row)
+                 :location (nth 3 row) :start-time (nth 4 row) :end-time (nth 5 row)
+                 :all-day (nth 6 row) :recurrence (nth 7 row)
+                 :reminder-minutes (nth 8 row) :status (nth 9 row)
+                 :notes (nth 10 row) :created-at (nth 11 row)
+                 :updated-at (nth 12 row) :deleted-at (nth 13 row)))
+
+(defun save-event (evt)
+  (if (obj-id evt)
+      (progn
+        (db-execute "UPDATE events SET title=?, description=?, location=?, start_time=?,
+                     end_time=?, all_day=?, recurrence=?, reminder_minutes=?, status=?, notes=?,
+                     updated_at=datetime('now') WHERE id=?"
+                    (event-title evt) (event-description evt) (event-location evt)
+                    (event-start-time evt) (event-end-time evt) (event-all-day evt)
+                    (event-recurrence evt) (event-reminder-minutes evt)
+                    (event-status evt) (event-notes evt) (obj-id evt))
+        evt)
+      (progn
+        (db-execute "INSERT INTO events (title, description, location, start_time, end_time,
+                     all_day, recurrence, reminder_minutes, status, notes)
+                     VALUES (?,?,?,?,?,?,?,?,?,?)"
+                    (event-title evt) (event-description evt) (event-location evt)
+                    (event-start-time evt) (event-end-time evt) (event-all-day evt)
+                    (event-recurrence evt) (event-reminder-minutes evt)
+                    (event-status evt) (event-notes evt))
+        (setf (obj-id evt) (db-last-insert-id))
+        evt)))
+
+(defun load-event (id)
+  (let ((row (db-query-single
+              (format nil "SELECT ~A FROM events WHERE id=? AND deleted_at IS NULL" *event-cols*) id)))
+    (when row (make-event-from-row row))))
+
+(defun load-upcoming-events (&optional (days 7) (limit 30))
+  "Load events in the next DAYS days."
+  (let* ((now (local-time:format-timestring nil (local-time:now)
+                :format '((:year 4) #\- (:month 2) #\- (:day 2) #\T (:hour 2) #\: (:min 2) #\: (:sec 2))))
+         (future (local-time:format-timestring nil
+                   (local-time:timestamp+ (local-time:now) days :day)
+                   :format '((:year 4) #\- (:month 2) #\- (:day 2) #\T (:hour 2) #\: (:min 2) #\: (:sec 2)))))
+    (mapcar #'make-event-from-row
+            (db-query (format nil "SELECT ~A FROM events
+                       WHERE deleted_at IS NULL AND status='scheduled'
+                         AND start_time >= ? AND start_time <= ?
+                       ORDER BY start_time ASC LIMIT ?" *event-cols*)
+                      now future limit))))
+
+(defun load-events (&optional (limit 30))
+  (mapcar #'make-event-from-row
+          (db-query (format nil "SELECT ~A FROM events WHERE deleted_at IS NULL
+                     ORDER BY start_time DESC LIMIT ?" *event-cols*) limit)))
+
+(defun delete-event (evt)
+  (when (obj-id evt)
+    (db-execute "UPDATE events SET deleted_at=datetime('now') WHERE id=?" (obj-id evt))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Invoice
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defclass invoice (astrolabe-object)
+  ((title        :initarg :title        :accessor inv-title        :initform "")
+   (inv-type     :initarg :inv-type     :accessor inv-type         :initform "invoice")
+   (status       :initarg :status       :accessor inv-status       :initform "draft")
+   (amount       :initarg :amount       :accessor inv-amount       :initform nil)
+   (currency     :initarg :currency     :accessor inv-currency     :initform "USD")
+   (due-date     :initarg :due-date     :accessor inv-due-date     :initform nil)
+   (issued-date  :initarg :issued-date  :accessor inv-issued-date  :initform nil)
+   (paid-date    :initarg :paid-date    :accessor inv-paid-date    :initform nil)
+   (counterparty :initarg :counterparty :accessor inv-counterparty :initform nil)
+   (reference    :initarg :reference    :accessor inv-reference    :initform nil)
+   (file-path    :initarg :file-path    :accessor inv-file-path    :initform nil)
+   (notes        :initarg :notes        :accessor inv-notes        :initform "")))
+
+(defmethod obj-type-name ((obj invoice)) "invoice")
+(defmethod obj-display-title ((obj invoice))
+  (format nil "~A~A" (inv-title obj)
+          (if (inv-amount obj) (format nil " (~A ~A)" (inv-currency obj) (inv-amount obj)) "")))
+
+(defparameter *inv-cols*
+  "id, title, type, status, amount, currency, due_date, issued_date, paid_date,
+   counterparty, reference, file_path, notes, created_at, updated_at, deleted_at")
+
+(defun make-inv-from-row (row)
+  (make-instance 'invoice
+                 :id (nth 0 row) :title (nth 1 row) :inv-type (nth 2 row)
+                 :status (nth 3 row) :amount (nth 4 row) :currency (nth 5 row)
+                 :due-date (nth 6 row) :issued-date (nth 7 row) :paid-date (nth 8 row)
+                 :counterparty (nth 9 row) :reference (nth 10 row)
+                 :file-path (nth 11 row) :notes (nth 12 row)
+                 :created-at (nth 13 row) :updated-at (nth 14 row) :deleted-at (nth 15 row)))
+
+(defun save-invoice (inv)
+  (if (obj-id inv)
+      (progn
+        (db-execute "UPDATE invoices SET title=?, type=?, status=?, amount=?, currency=?,
+                     due_date=?, issued_date=?, paid_date=?, counterparty=?, reference=?,
+                     file_path=?, notes=?, updated_at=datetime('now') WHERE id=?"
+                    (inv-title inv) (inv-type inv) (inv-status inv)
+                    (inv-amount inv) (inv-currency inv) (inv-due-date inv)
+                    (inv-issued-date inv) (inv-paid-date inv) (inv-counterparty inv)
+                    (inv-reference inv) (inv-file-path inv) (inv-notes inv) (obj-id inv))
+        inv)
+      (progn
+        (db-execute "INSERT INTO invoices (title, type, status, amount, currency, due_date,
+                     issued_date, counterparty, reference, file_path, notes)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+                    (inv-title inv) (inv-type inv) (inv-status inv)
+                    (inv-amount inv) (inv-currency inv) (inv-due-date inv)
+                    (inv-issued-date inv) (inv-counterparty inv)
+                    (inv-reference inv) (inv-file-path inv) (inv-notes inv))
+        (setf (obj-id inv) (db-last-insert-id))
+        inv)))
+
+(defun load-invoice (id)
+  (let ((row (db-query-single
+              (format nil "SELECT ~A FROM invoices WHERE id=? AND deleted_at IS NULL" *inv-cols*) id)))
+    (when row (make-inv-from-row row))))
+
+(defun load-invoices (&optional (limit 30))
+  (mapcar #'make-inv-from-row
+          (db-query (format nil "SELECT ~A FROM invoices WHERE deleted_at IS NULL
+                     ORDER BY created_at DESC LIMIT ?" *inv-cols*) limit)))
+
+(defun load-open-invoices (&optional (limit 30))
+  (mapcar #'make-inv-from-row
+          (db-query (format nil "SELECT ~A FROM invoices
+                     WHERE deleted_at IS NULL AND status IN ('draft','sent','overdue')
+                     ORDER BY due_date ASC NULLS LAST LIMIT ?" *inv-cols*) limit)))
+
+(defun delete-invoice (inv)
+  (when (obj-id inv)
+    (db-execute "UPDATE invoices SET deleted_at=datetime('now') WHERE id=?" (obj-id inv))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Ticket
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defclass ticket (astrolabe-object)
+  ((title       :initarg :title       :accessor ticket-title       :initform "")
+   (description :initarg :description :accessor ticket-description :initform "")
+   (status      :initarg :status      :accessor ticket-status      :initform "open")
+   (priority    :initarg :priority    :accessor ticket-priority    :initform "B")
+   (severity    :initarg :severity    :accessor ticket-severity    :initform nil)
+   (assigned-to :initarg :assigned-to :accessor ticket-assigned-to :initform nil)
+   (project-id  :initarg :project-id  :accessor ticket-project-id  :initform nil)
+   (labels      :initarg :labels      :accessor ticket-labels      :initform "")
+   (resolution  :initarg :resolution  :accessor ticket-resolution  :initform nil)
+   (resolved-at :initarg :resolved-at :accessor ticket-resolved-at :initform nil)
+   (notes       :initarg :notes       :accessor ticket-notes       :initform "")))
+
+(defmethod obj-type-name ((obj ticket)) "ticket")
+(defmethod obj-display-title ((obj ticket)) (ticket-title obj))
+
+(defparameter *ticket-cols*
+  "id, title, description, status, priority, severity, assigned_to, project_id,
+   labels, resolution, resolved_at, notes, created_at, updated_at, deleted_at")
+
+(defun make-ticket-from-row (row)
+  (make-instance 'ticket
+                 :id (nth 0 row) :title (nth 1 row) :description (nth 2 row)
+                 :status (nth 3 row) :priority (nth 4 row) :severity (nth 5 row)
+                 :assigned-to (nth 6 row) :project-id (nth 7 row)
+                 :labels (nth 8 row) :resolution (nth 9 row) :resolved-at (nth 10 row)
+                 :notes (nth 11 row) :created-at (nth 12 row)
+                 :updated-at (nth 13 row) :deleted-at (nth 14 row)))
+
+(defun save-ticket (tkt)
+  (if (obj-id tkt)
+      (progn
+        (db-execute "UPDATE tickets SET title=?, description=?, status=?, priority=?,
+                     severity=?, assigned_to=?, project_id=?, labels=?, resolution=?,
+                     resolved_at=?, notes=?, updated_at=datetime('now') WHERE id=?"
+                    (ticket-title tkt) (ticket-description tkt) (ticket-status tkt)
+                    (ticket-priority tkt) (ticket-severity tkt) (ticket-assigned-to tkt)
+                    (ticket-project-id tkt) (ticket-labels tkt) (ticket-resolution tkt)
+                    (ticket-resolved-at tkt) (ticket-notes tkt) (obj-id tkt))
+        tkt)
+      (progn
+        (db-execute "INSERT INTO tickets (title, description, status, priority, severity,
+                     assigned_to, project_id, labels, notes) VALUES (?,?,?,?,?,?,?,?,?)"
+                    (ticket-title tkt) (ticket-description tkt) (ticket-status tkt)
+                    (ticket-priority tkt) (ticket-severity tkt) (ticket-assigned-to tkt)
+                    (ticket-project-id tkt) (ticket-labels tkt) (ticket-notes tkt))
+        (setf (obj-id tkt) (db-last-insert-id))
+        (db-execute "INSERT INTO tickets_fts (rowid, title, description, notes, resolution) VALUES (?,?,?,?,?)"
+                    (obj-id tkt) (ticket-title tkt) (ticket-description tkt) (ticket-notes tkt) "")
+        tkt)))
+
+(defun load-ticket (id)
+  (let ((row (db-query-single
+              (format nil "SELECT ~A FROM tickets WHERE id=? AND deleted_at IS NULL" *ticket-cols*) id)))
+    (when row (make-ticket-from-row row))))
+
+(defun load-open-tickets (&optional (limit 50))
+  (mapcar #'make-ticket-from-row
+          (db-query (format nil "SELECT ~A FROM tickets
+                     WHERE deleted_at IS NULL AND status IN ('open','in_progress')
+                     ORDER BY priority ASC, created_at DESC LIMIT ?" *ticket-cols*) limit)))
+
+(defun load-tickets (&optional (limit 50))
+  (mapcar #'make-ticket-from-row
+          (db-query (format nil "SELECT ~A FROM tickets WHERE deleted_at IS NULL
+                     ORDER BY created_at DESC LIMIT ?" *ticket-cols*) limit)))
+
+(defun resolve-ticket (tkt &optional resolution)
+  (setf (ticket-status tkt) "resolved")
+  (setf (ticket-resolution tkt) resolution)
+  (db-execute "UPDATE tickets SET status='resolved', resolution=?, resolved_at=datetime('now'),
+               updated_at=datetime('now') WHERE id=?"
+              (or resolution "") (obj-id tkt))
+  tkt)
+
+(defun delete-ticket (tkt)
+  (when (obj-id tkt)
+    (db-execute "UPDATE tickets SET deleted_at=datetime('now') WHERE id=?" (obj-id tkt))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Repository
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defclass repository (astrolabe-object)
+  ((name         :initarg :name         :accessor repo-name         :initform "")
+   (path         :initarg :path         :accessor repo-path         :initform nil)
+   (remote-url   :initarg :remote-url   :accessor repo-remote-url   :initform nil)
+   (branch       :initarg :branch       :accessor repo-branch       :initform "main")
+   (description  :initarg :description  :accessor repo-description  :initform "")
+   (project-id   :initarg :project-id   :accessor repo-project-id   :initform nil)
+   (last-checked :initarg :last-checked :accessor repo-last-checked :initform nil)
+   (notes        :initarg :notes        :accessor repo-notes        :initform "")))
+
+(defmethod obj-type-name ((obj repository)) "repository")
+(defmethod obj-display-title ((obj repository)) (repo-name obj))
+
+(defparameter *repo-cols*
+  "id, name, path, remote_url, branch, description, project_id, last_checked, notes,
+   created_at, updated_at, deleted_at")
+
+(defun make-repo-from-row (row)
+  (make-instance 'repository
+                 :id (nth 0 row) :name (nth 1 row) :path (nth 2 row)
+                 :remote-url (nth 3 row) :branch (nth 4 row)
+                 :description (nth 5 row) :project-id (nth 6 row)
+                 :last-checked (nth 7 row) :notes (nth 8 row)
+                 :created-at (nth 9 row) :updated-at (nth 10 row) :deleted-at (nth 11 row)))
+
+(defun save-repository (repo)
+  (if (obj-id repo)
+      (progn
+        (db-execute "UPDATE repositories SET name=?, path=?, remote_url=?, branch=?,
+                     description=?, project_id=?, last_checked=?, notes=?,
+                     updated_at=datetime('now') WHERE id=?"
+                    (repo-name repo) (repo-path repo) (repo-remote-url repo) (repo-branch repo)
+                    (repo-description repo) (repo-project-id repo) (repo-last-checked repo)
+                    (repo-notes repo) (obj-id repo))
+        repo)
+      (progn
+        (db-execute "INSERT INTO repositories (name, path, remote_url, branch, description, project_id, notes)
+                     VALUES (?,?,?,?,?,?,?)"
+                    (repo-name repo) (repo-path repo) (repo-remote-url repo) (repo-branch repo)
+                    (repo-description repo) (repo-project-id repo) (repo-notes repo))
+        (setf (obj-id repo) (db-last-insert-id))
+        repo)))
+
+(defun load-repository (id)
+  (let ((row (db-query-single
+              (format nil "SELECT ~A FROM repositories WHERE id=? AND deleted_at IS NULL" *repo-cols*) id)))
+    (when row (make-repo-from-row row))))
+
+(defun load-repositories (&optional (limit 30))
+  (mapcar #'make-repo-from-row
+          (db-query (format nil "SELECT ~A FROM repositories WHERE deleted_at IS NULL
+                     ORDER BY name ASC LIMIT ?" *repo-cols*) limit)))
+
+(defun delete-repository (repo)
+  (when (obj-id repo)
+    (db-execute "UPDATE repositories SET deleted_at=datetime('now') WHERE id=?" (obj-id repo))))
+
+(defun repo-recent-commits (repo &optional (count 10))
+  "Get recent commit log for REPO by running git log. Returns a list of strings."
+  (when (and (repo-path repo) (probe-file (repo-path repo)))
+    (handler-case
+        (multiple-value-bind (output)
+            (uiop:run-program
+             (list "git" "-C" (namestring (repo-path repo)) "log"
+                   (format nil "--oneline") (format nil "-~D" count))
+             :output :string :error-output :string :ignore-error-status t)
+          (when (and output (> (length output) 0))
+            (cl-ppcre:split "\\n" (string-trim '(#\Newline) output))))
+      (error () nil))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Server / Host
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defclass server (astrolabe-object)
+  ((name         :initarg :name         :accessor server-name         :initform "")
+   (hostname     :initarg :hostname     :accessor server-hostname     :initform "")
+   (port         :initarg :port         :accessor server-port         :initform 22)
+   (username     :initarg :username     :accessor server-username     :initform nil)
+   (ssh-key      :initarg :ssh-key      :accessor server-ssh-key      :initform nil)
+   (description  :initarg :description  :accessor server-description  :initform "")
+   (os           :initarg :os           :accessor server-os           :initform nil)
+   (status       :initarg :status       :accessor server-status       :initform "unknown")
+   (last-checked :initarg :last-checked :accessor server-last-checked :initform nil)
+   (project-id   :initarg :project-id   :accessor server-project-id   :initform nil)
+   (notes        :initarg :notes        :accessor server-notes        :initform "")))
+
+(defmethod obj-type-name ((obj server)) "server")
+(defmethod obj-display-title ((obj server)) (server-name obj))
+
+(defparameter *server-cols*
+  "id, name, hostname, port, username, ssh_key, description, os, status, last_checked,
+   project_id, notes, created_at, updated_at, deleted_at")
+
+(defun make-server-from-row (row)
+  (make-instance 'server
+                 :id (nth 0 row) :name (nth 1 row) :hostname (nth 2 row)
+                 :port (nth 3 row) :username (nth 4 row) :ssh-key (nth 5 row)
+                 :description (nth 6 row) :os (nth 7 row) :status (nth 8 row)
+                 :last-checked (nth 9 row) :project-id (nth 10 row)
+                 :notes (nth 11 row) :created-at (nth 12 row)
+                 :updated-at (nth 13 row) :deleted-at (nth 14 row)))
+
+(defun save-server (srv)
+  (if (obj-id srv)
+      (progn
+        (db-execute "UPDATE servers SET name=?, hostname=?, port=?, username=?, ssh_key=?,
+                     description=?, os=?, status=?, last_checked=?, project_id=?, notes=?,
+                     updated_at=datetime('now') WHERE id=?"
+                    (server-name srv) (server-hostname srv) (server-port srv)
+                    (server-username srv) (server-ssh-key srv) (server-description srv)
+                    (server-os srv) (server-status srv) (server-last-checked srv)
+                    (server-project-id srv) (server-notes srv) (obj-id srv))
+        srv)
+      (progn
+        (db-execute "INSERT INTO servers (name, hostname, port, username, ssh_key, description,
+                     os, status, project_id, notes) VALUES (?,?,?,?,?,?,?,?,?,?)"
+                    (server-name srv) (server-hostname srv) (server-port srv)
+                    (server-username srv) (server-ssh-key srv) (server-description srv)
+                    (server-os srv) (server-status srv) (server-project-id srv)
+                    (server-notes srv))
+        (setf (obj-id srv) (db-last-insert-id))
+        srv)))
+
+(defun load-server (id)
+  (let ((row (db-query-single
+              (format nil "SELECT ~A FROM servers WHERE id=? AND deleted_at IS NULL" *server-cols*) id)))
+    (when row (make-server-from-row row))))
+
+(defun load-servers (&optional (limit 30))
+  (mapcar #'make-server-from-row
+          (db-query (format nil "SELECT ~A FROM servers WHERE deleted_at IS NULL
+                     ORDER BY name ASC LIMIT ?" *server-cols*) limit)))
+
+(defun delete-server (srv)
+  (when (obj-id srv)
+    (db-execute "UPDATE servers SET deleted_at=datetime('now') WHERE id=?" (obj-id srv))))
+
+(defun ping-server (srv)
+  "Ping a server and update its status. Returns t if online."
+  (handler-case
+      (multiple-value-bind (output error-output exit-code)
+          (uiop:run-program (list "ping" "-c" "1" "-W" "3" (server-hostname srv))
+                             :output :string :error-output :string :ignore-error-status t)
+        (declare (ignore output error-output))
+        (let* ((online (zerop exit-code))
+               (now (local-time:format-timestring nil (local-time:now)
+                      :format '((:year 4) #\- (:month 2) #\- (:day 2) #\T (:hour 2) #\: (:min 2) #\: (:sec 2)))))
+          (setf (server-status srv) (if online "online" "offline"))
+          (setf (server-last-checked srv) now)
+          (db-execute "UPDATE servers SET status=?, last_checked=?, updated_at=datetime('now') WHERE id=?"
+                      (server-status srv) now (obj-id srv))
+          online))
+    (error () nil)))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Habit
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defclass habit (astrolabe-object)
+  ((name         :initarg :name         :accessor habit-name         :initform "")
+   (description  :initarg :description  :accessor habit-description  :initform "")
+   (frequency    :initarg :frequency    :accessor habit-frequency    :initform "daily")
+   (target-count :initarg :target-count :accessor habit-target-count :initform 1)
+   (active       :initarg :active       :accessor habit-active       :initform 1)
+   (streak       :initarg :streak       :accessor habit-streak       :initform 0)
+   (best-streak  :initarg :best-streak  :accessor habit-best-streak  :initform 0)
+   (last-logged  :initarg :last-logged  :accessor habit-last-logged  :initform nil)))
+
+(defmethod obj-type-name ((obj habit)) "habit")
+(defmethod obj-display-title ((obj habit)) (habit-name obj))
+
+(defparameter *habit-cols*
+  "id, name, description, frequency, target_count, active, streak, best_streak, last_logged,
+   created_at, updated_at, deleted_at")
+
+(defun make-habit-from-row (row)
+  (make-instance 'habit
+                 :id (nth 0 row) :name (nth 1 row) :description (nth 2 row)
+                 :frequency (nth 3 row) :target-count (nth 4 row) :active (nth 5 row)
+                 :streak (nth 6 row) :best-streak (nth 7 row) :last-logged (nth 8 row)
+                 :created-at (nth 9 row) :updated-at (nth 10 row) :deleted-at (nth 11 row)))
+
+(defun save-habit (hab)
+  (if (obj-id hab)
+      (progn
+        (db-execute "UPDATE habits SET name=?, description=?, frequency=?, target_count=?,
+                     active=?, streak=?, best_streak=?, last_logged=?,
+                     updated_at=datetime('now') WHERE id=?"
+                    (habit-name hab) (habit-description hab) (habit-frequency hab)
+                    (habit-target-count hab) (habit-active hab) (habit-streak hab)
+                    (habit-best-streak hab) (habit-last-logged hab) (obj-id hab))
+        hab)
+      (progn
+        (db-execute "INSERT INTO habits (name, description, frequency, target_count) VALUES (?,?,?,?)"
+                    (habit-name hab) (habit-description hab) (habit-frequency hab)
+                    (habit-target-count hab))
+        (setf (obj-id hab) (db-last-insert-id))
+        hab)))
+
+(defun load-habit (id)
+  (let ((row (db-query-single
+              (format nil "SELECT ~A FROM habits WHERE id=? AND deleted_at IS NULL" *habit-cols*) id)))
+    (when row (make-habit-from-row row))))
+
+(defun load-habits (&optional (limit 30))
+  (mapcar #'make-habit-from-row
+          (db-query (format nil "SELECT ~A FROM habits WHERE deleted_at IS NULL AND active=1
+                     ORDER BY name ASC LIMIT ?" *habit-cols*) limit)))
+
+(defun delete-habit (hab)
+  (when (obj-id hab)
+    (db-execute "UPDATE habits SET deleted_at=datetime('now') WHERE id=?" (obj-id hab))))
+
+(defun log-habit (hab &optional notes)
+  "Log a habit entry for today. Updates streak."
+  (let* ((today (subseq (local-time:format-timestring nil (local-time:now)
+                          :format '((:year 4) #\- (:month 2) #\- (:day 2)))
+                        0 10))
+         (existing (db-query-single
+                    "SELECT id FROM habit_entries WHERE habit_id=? AND entry_date=?"
+                    (obj-id hab) today)))
+    (if existing
+        ;; Already logged today, increment count
+        (db-execute "UPDATE habit_entries SET count=count+1 WHERE id=?" (first existing))
+        ;; New entry
+        (db-execute "INSERT INTO habit_entries (habit_id, entry_date, notes) VALUES (?,?,?)"
+                    (obj-id hab) today (or notes "")))
+    ;; Update streak
+    (let* ((last (habit-last-logged hab))
+           (yesterday (subseq (local-time:format-timestring nil
+                                (local-time:timestamp- (local-time:now) 1 :day)
+                                :format '((:year 4) #\- (:month 2) #\- (:day 2)))
+                              0 10))
+           (new-streak (cond
+                         ((null last) 1)
+                         ((string= last today) (habit-streak hab))
+                         ((string= last yesterday) (1+ (habit-streak hab)))
+                         (t 1))))
+      (setf (habit-streak hab) new-streak)
+      (setf (habit-last-logged hab) today)
+      (when (> new-streak (habit-best-streak hab))
+        (setf (habit-best-streak hab) new-streak))
+      (db-execute "UPDATE habits SET streak=?, best_streak=?, last_logged=?,
+                   updated_at=datetime('now') WHERE id=?"
+                  (habit-streak hab) (habit-best-streak hab) today (obj-id hab))
+      new-streak)))

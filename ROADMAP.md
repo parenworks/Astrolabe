@@ -338,21 +338,48 @@ Each object displayed in the navigation or detail pane is wrapped in
 
 ---
 
-## Phase 6: Extended Objects (v0.7+)
+## Phase 6: Extended Objects (v0.7+) ✅
 
 **Goal:** Expand the object model for more real-world use cases.
 
-### Potential Additions
+### Deliverables
 
-- [ ] **Server/Host** — SSH config, status checks, log tailing
-- [ ] **Document** — File references with metadata, preview, version notes
-- [ ] **Event/Meeting** — Calendar entries linked to projects/persons
-- [ ] **Invoice/Contract** — Business document tracking
-- [ ] **Ticket** — Issue tracking with status workflow
-- [ ] **Repository** — Git repository references with recent commit display
-- [ ] **Bookmark** — Web bookmarks with tags and notes
-- [ ] **Habit** — Recurring habit tracking with streaks
-- [ ] **Journal** — Daily journal entries (one per day, append-only)
+- [x] **Journal** — Daily journal entries (one per day, append-only)
+  - `Journal` — Create/append to today's entry
+  - `Show Journal` — Browse all entries by date
+  - Mood tracking, inline tags
+- [x] **Document** — File references with metadata and version notes
+  - `Add Document [title]` — Register a file with path, type, description
+  - `Show Documents` — Browse all documents
+- [x] **Event/Meeting** — Calendar entries with start/end times, location, recurrence
+  - `Add Event [title]` — Create with date, time, location
+  - `Show Events` — Browse upcoming and all events
+  - `Cancel Event` — Mark as cancelled
+- [x] **Invoice/Contract** — Business document tracking with status workflow
+  - `Add Invoice [title]` — Create with type, amount, currency, counterparty, due date
+  - `Show Invoices` — Browse open and all invoices
+  - `Mark Paid` — Mark invoice as paid
+- [x] **Ticket** — Issue tracking with status workflow (open → in_progress → resolved → closed)
+  - `File Ticket [title]` — Create with priority and description
+  - `Show Tickets` — Browse open tickets
+  - `Resolve Ticket` — Close with resolution notes
+- [x] **Repository** — Git repository references with recent commit display
+  - `Add Repository [name]` — Register with local path, remote URL, branch
+  - `Show Repositories` — Browse all repos
+  - `Repo Log` — Show recent commits via git log
+- [x] **Server/Host** — SSH config, status checks via ping
+  - `Add Server [name]` — Register with hostname, port, username
+  - `Show Servers` — Browse all servers with status indicators
+  - `Ping Server` — Check if server is online
+- [x] **Habit** — Recurring habit tracking with streaks
+  - `Add Habit [name]` — Create with frequency (daily/weekly/monthly)
+  - `Show Habits` — Browse active habits with streak counts
+  - `Log Habit` — Log today's entry, auto-update streak
+- [x] **Bookmark** — Web bookmarks with tags and notes
+  - `Add Bookmark [title]` — Save URL or reference
+  - `Show Bookmarks` — Browse all bookmarks
+- [x] **Schema v3 migration** — 9 new tables with FTS5 indexes for searchable types
+- [x] **Full CLIM integration** — Presentation types, click translators, nav/detail views for all 9 types
 
 ---
 

@@ -4,7 +4,7 @@
 (in-package #:astrolabe)
 
 ;;; Current schema version — increment when adding migrations.
-(defvar *schema-version* 2)
+(defvar *schema-version* 3)
 
 ;;; The active database handle (set by open-database).
 (defvar *db* nil)
@@ -50,6 +50,8 @@
       (apply-schema-v1))
     (when (< version 2)
       (apply-schema-v2))
+    (when (< version 3)
+      (apply-schema-v3))
     ;; Record version
     (when (< version *schema-version*)
       (sqlite:execute-non-query
@@ -397,6 +399,198 @@
   (sqlite:execute-non-query *db*
     "CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts
        USING fts5(body, sender_nick, content=messages, content_rowid=id)"))
+
+(defun apply-schema-v3 ()
+  "Phase 6: Extended object tables."
+
+  ;; ── Journal ──────────────────────────────────────────────────────────
+  ;; Daily journal entries — one per day, append-only by convention.
+  (sqlite:execute-non-query *db*
+    "CREATE TABLE IF NOT EXISTS journal_entries (
+       id          INTEGER PRIMARY KEY AUTOINCREMENT,
+       entry_date  TEXT    NOT NULL UNIQUE,              -- YYYY-MM-DD, one per day
+       title       TEXT    DEFAULT '',
+       body        TEXT    DEFAULT '',
+       mood        TEXT,                                  -- optional: great, good, okay, bad, terrible
+       tags        TEXT    DEFAULT '',                    -- comma-separated inline tags
+       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       deleted_at  TEXT
+     )")
+  (sqlite:execute-non-query *db*
+    "CREATE INDEX IF NOT EXISTS idx_journal_date ON journal_entries(entry_date)")
+  (sqlite:execute-non-query *db*
+    "CREATE VIRTUAL TABLE IF NOT EXISTS journal_fts
+       USING fts5(title, body, content=journal_entries, content_rowid=id)")
+
+  ;; ── Documents ────────────────────────────────────────────────────────
+  ;; File references with metadata.
+  (sqlite:execute-non-query *db*
+    "CREATE TABLE IF NOT EXISTS documents (
+       id          INTEGER PRIMARY KEY AUTOINCREMENT,
+       title       TEXT    NOT NULL,
+       file_path   TEXT,                                  -- absolute path on disk
+       file_type   TEXT,                                  -- pdf, md, txt, image, etc.
+       file_size   INTEGER,                               -- bytes
+       description TEXT    DEFAULT '',
+       version     TEXT,                                  -- optional version string
+       notes       TEXT    DEFAULT '',
+       pinned      INTEGER NOT NULL DEFAULT 0,
+       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       deleted_at  TEXT
+     )")
+  (sqlite:execute-non-query *db*
+    "CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts
+       USING fts5(title, description, notes, content=documents, content_rowid=id)")
+
+  ;; ── Events / Meetings ────────────────────────────────────────────────
+  ;; Calendar entries linked to projects/persons.
+  (sqlite:execute-non-query *db*
+    "CREATE TABLE IF NOT EXISTS events (
+       id          INTEGER PRIMARY KEY AUTOINCREMENT,
+       title       TEXT    NOT NULL,
+       description TEXT    DEFAULT '',
+       location    TEXT,
+       start_time  TEXT    NOT NULL,                      -- ISO datetime
+       end_time    TEXT,                                  -- ISO datetime
+       all_day     INTEGER NOT NULL DEFAULT 0,
+       recurrence  TEXT,                                  -- daily, weekly, monthly, yearly
+       reminder_minutes INTEGER,                          -- minutes before start
+       status      TEXT    NOT NULL DEFAULT 'scheduled',  -- scheduled, cancelled, completed
+       notes       TEXT    DEFAULT '',
+       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       deleted_at  TEXT
+     )")
+  (sqlite:execute-non-query *db*
+    "CREATE INDEX IF NOT EXISTS idx_events_start ON events(start_time)")
+  (sqlite:execute-non-query *db*
+    "CREATE INDEX IF NOT EXISTS idx_events_status ON events(status)")
+
+  ;; ── Invoices / Contracts ─────────────────────────────────────────────
+  ;; Business document tracking.
+  (sqlite:execute-non-query *db*
+    "CREATE TABLE IF NOT EXISTS invoices (
+       id          INTEGER PRIMARY KEY AUTOINCREMENT,
+       title       TEXT    NOT NULL,
+       type        TEXT    NOT NULL DEFAULT 'invoice',    -- invoice, contract, quote, receipt
+       status      TEXT    NOT NULL DEFAULT 'draft',      -- draft, sent, paid, overdue, cancelled
+       amount      REAL,                                  -- monetary amount
+       currency    TEXT    DEFAULT 'USD',
+       due_date    TEXT,                                  -- YYYY-MM-DD
+       issued_date TEXT,                                  -- YYYY-MM-DD
+       paid_date   TEXT,
+       counterparty TEXT,                                 -- client, vendor, etc.
+       reference   TEXT,                                  -- invoice number, contract ID
+       file_path   TEXT,                                  -- link to document file
+       notes       TEXT    DEFAULT '',
+       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       deleted_at  TEXT
+     )")
+  (sqlite:execute-non-query *db*
+    "CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status)")
+  (sqlite:execute-non-query *db*
+    "CREATE INDEX IF NOT EXISTS idx_invoices_due ON invoices(due_date)")
+
+  ;; ── Tickets ──────────────────────────────────────────────────────────
+  ;; Issue tracking with status workflow.
+  (sqlite:execute-non-query *db*
+    "CREATE TABLE IF NOT EXISTS tickets (
+       id          INTEGER PRIMARY KEY AUTOINCREMENT,
+       title       TEXT    NOT NULL,
+       description TEXT    DEFAULT '',
+       status      TEXT    NOT NULL DEFAULT 'open',       -- open, in_progress, resolved, closed
+       priority    TEXT    NOT NULL DEFAULT 'B',          -- A, B, C
+       severity    TEXT,                                  -- critical, major, minor, trivial
+       assigned_to INTEGER REFERENCES persons(id),
+       project_id  INTEGER REFERENCES projects(id),
+       labels      TEXT    DEFAULT '',                    -- comma-separated labels
+       resolution  TEXT,                                  -- resolution notes when closed
+       resolved_at TEXT,
+       notes       TEXT    DEFAULT '',
+       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       deleted_at  TEXT
+     )")
+  (sqlite:execute-non-query *db*
+    "CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status)")
+  (sqlite:execute-non-query *db*
+    "CREATE INDEX IF NOT EXISTS idx_tickets_project ON tickets(project_id)")
+  (sqlite:execute-non-query *db*
+    "CREATE VIRTUAL TABLE IF NOT EXISTS tickets_fts
+       USING fts5(title, description, notes, resolution, content=tickets, content_rowid=id)")
+
+  ;; ── Repositories ─────────────────────────────────────────────────────
+  ;; Git repository references.
+  (sqlite:execute-non-query *db*
+    "CREATE TABLE IF NOT EXISTS repositories (
+       id          INTEGER PRIMARY KEY AUTOINCREMENT,
+       name        TEXT    NOT NULL,
+       path        TEXT,                                  -- local filesystem path
+       remote_url  TEXT,                                  -- origin remote URL
+       branch      TEXT    DEFAULT 'main',
+       description TEXT    DEFAULT '',
+       project_id  INTEGER REFERENCES projects(id),
+       last_checked TEXT,                                 -- last time we read git log
+       notes       TEXT    DEFAULT '',
+       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       deleted_at  TEXT
+     )")
+
+  ;; ── Servers / Hosts ──────────────────────────────────────────────────
+  ;; SSH config, status checks.
+  (sqlite:execute-non-query *db*
+    "CREATE TABLE IF NOT EXISTS servers (
+       id          INTEGER PRIMARY KEY AUTOINCREMENT,
+       name        TEXT    NOT NULL,
+       hostname    TEXT    NOT NULL,                      -- IP or hostname
+       port        INTEGER NOT NULL DEFAULT 22,
+       username    TEXT,
+       ssh_key     TEXT,                                  -- path to SSH key
+       description TEXT    DEFAULT '',
+       os          TEXT,                                  -- e.g. 'Arch Linux', 'Ubuntu 24.04'
+       status      TEXT    DEFAULT 'unknown',             -- online, offline, unknown
+       last_checked TEXT,
+       project_id  INTEGER REFERENCES projects(id),
+       notes       TEXT    DEFAULT '',
+       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       deleted_at  TEXT
+     )")
+
+  ;; ── Habits ───────────────────────────────────────────────────────────
+  ;; Recurring habit tracking.
+  (sqlite:execute-non-query *db*
+    "CREATE TABLE IF NOT EXISTS habits (
+       id          INTEGER PRIMARY KEY AUTOINCREMENT,
+       name        TEXT    NOT NULL,
+       description TEXT    DEFAULT '',
+       frequency   TEXT    NOT NULL DEFAULT 'daily',      -- daily, weekly, monthly
+       target_count INTEGER NOT NULL DEFAULT 1,           -- times per period
+       active      INTEGER NOT NULL DEFAULT 1,            -- 0 = paused
+       streak      INTEGER NOT NULL DEFAULT 0,            -- current streak count
+       best_streak INTEGER NOT NULL DEFAULT 0,            -- all-time best streak
+       last_logged TEXT,                                  -- date of last log
+       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       deleted_at  TEXT
+     )")
+
+  (sqlite:execute-non-query *db*
+    "CREATE TABLE IF NOT EXISTS habit_entries (
+       id          INTEGER PRIMARY KEY AUTOINCREMENT,
+       habit_id    INTEGER NOT NULL REFERENCES habits(id),
+       entry_date  TEXT    NOT NULL,                      -- YYYY-MM-DD
+       count       INTEGER NOT NULL DEFAULT 1,
+       notes       TEXT    DEFAULT '',
+       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       UNIQUE(habit_id, entry_date)
+     )")
+  (sqlite:execute-non-query *db*
+    "CREATE INDEX IF NOT EXISTS idx_habit_entries_habit ON habit_entries(habit_id)"))
 
 ;;; ─────────────────────────────────────────────────────────────────────
 ;;; Query helpers
