@@ -20,6 +20,7 @@
                              (:file "app")
                              (:file "presentations")
                              (:file "feeds")
+                             (:file "automation")
                              (:file "commands")
                              (:file "views")
                              (:file "main")))))

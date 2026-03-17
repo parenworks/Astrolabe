@@ -273,24 +273,39 @@ Each object displayed in the navigation or detail pane is wrapped in
 
 ---
 
-## Phase 4: Automation and Scripting (v0.5)
+## Phase 4: Automation and Scripting (v0.5) ✅
 
 **Goal:** Make every screen programmable and every workflow automatable.
 
 ### Deliverables
 
-- [ ] **Custom commands** — User-defined commands loaded from `~/.astrolabe/commands.lisp`
-- [ ] **Hooks** — Before/after hooks on object creation, modification, deletion
-- [ ] **Templates** — Note/task templates for recurring patterns
-  - `Capture Note :template daily-standup`
-- [ ] **Shell integration** — Execute shell commands and capture output
-  - `Shell [command]` — Run command, show output in detail pane
-  - `SSH [host]` — Open SSH session (if host is a server object)
-- [ ] **Export** — Export objects to various formats
-  - `Export [object] markdown` — Export as Markdown
-  - `Export [project] report` — Generate project report
-- [ ] **Scheduled actions** — Timer-based reminders and recurring tasks
-- [ ] **Batch operations** — Apply commands to multiple selected objects
+- [x] **Custom commands** — User-defined commands loaded from `~/.astrolabe/commands.lisp`
+  - `Reload Commands` — hot-reload user commands at runtime
+  - Loaded automatically on startup via `init-automation`
+- [x] **Hooks** — Before/after hooks on object creation, modification, deletion
+  - `register-hook` / `unregister-hook` / `run-hooks` / `clear-hooks`
+  - Hook names: `before-save-note`, `after-save-task`, etc.
+  - Error-safe: hook failures logged but don't crash the app
+- [x] **Templates** — Note/task templates for recurring patterns
+  - Templates stored as `.txt` files in `~/.astrolabe/templates/`
+  - `{{date}}`, `{{time}}`, and custom `{{var}}` placeholder expansion
+  - `List Templates` / `Capture Note Template` / `Add Task Template`
+- [x] **Shell integration** — Execute shell commands and capture output
+  - `Shell [command]` — Run via `/bin/sh`, show output in both nav and detail panes
+  - Color-coded exit status (green=0, red=error)
+  - Uses `uiop:run-program` for stdout+stderr capture
+- [x] **Export** — Export objects to various formats
+  - `Export [object]` — Export as Markdown to detail pane
+  - `Export File [object] [path]` — Export as Markdown to file
+  - `Export Project Report [project]` — Full project status report with task progress
+  - Export methods for note, task, project, person, snippet
+- [x] **Scheduled actions** — Reminder checks for overdue, due-today, and scheduled tasks
+  - `Check Reminders` — manual trigger, also runs on startup
+  - Creates notifications for overdue/due-today/scheduled tasks (once per day)
+- [x] **Batch operations** — Apply commands to multiple selected objects
+  - `Select [obj]` / `Deselect [obj]` / `Clear Selection` / `Show Selection`
+  - `Batch Tag [tag]` / `Batch Complete` / `Batch Delete`
+  - Selection count shown in status bar
 
 ---
 

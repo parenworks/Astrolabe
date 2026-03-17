@@ -515,6 +515,165 @@
   (format t "~&All notifications dismissed.~%"))
 
 ;;; ─────────────────────────────────────────────────────────────────────
+;;; Shell integration
+;;; ─────────────────────────────────────────────────────────────────────
+
+(define-astrolabe-command (com-shell :name t :menu t)
+    ((command 'string :prompt "Shell command"))
+  (format t "~&$ ~A~%" command)
+  (multiple-value-bind (output exit-code) (run-shell-command command)
+    (setf *shell-command* command)
+    (setf *shell-output* output)
+    (setf *shell-exit-code* exit-code)
+    (setf *current-view* :shell)
+    (setf *current-object* nil)
+    (format t "~&Exit ~D~%" exit-code)))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Templates
+;;; ─────────────────────────────────────────────────────────────────────
+
+(define-astrolabe-command (com-list-templates :name t :menu t) ()
+  (let ((templates (list-templates)))
+    (if templates
+        (progn
+          (format t "~&Available templates:~%")
+          (dolist (name templates)
+            (format t "  ~A~%" name)))
+        (format t "~&No templates found in ~A~%" *templates-dir*))))
+
+(define-astrolabe-command (com-capture-note-template :name t :menu t)
+    ((template-name 'string :prompt "Template name"))
+  (let ((tmpl (load-template template-name)))
+    (if tmpl
+        (let* ((expanded (expand-template tmpl))
+               (lines (cl-ppcre:split "\\n" expanded))
+               (title (or (first lines) template-name))
+               (body (format nil "~{~A~^~%~}" (rest lines)))
+               (note (save-note (make-instance 'note :title title :body body))))
+          (run-hooks "after-save-note" note)
+          (when *current-project*
+            (create-link *current-project* note "contains"))
+          (setf *current-object* note)
+          (format t "~&Note created from template '~A': ~A~%" template-name title))
+        (format t "~&Template '~A' not found.~%" template-name))))
+
+(define-astrolabe-command (com-add-task-template :name t :menu t)
+    ((template-name 'string :prompt "Template name"))
+  (let ((tmpl (load-template template-name)))
+    (if tmpl
+        (let* ((expanded (expand-template tmpl))
+               (lines (cl-ppcre:split "\\n" expanded))
+               (title (or (first lines) template-name))
+               (desc (format nil "~{~A~^~%~}" (rest lines)))
+               (task (save-task (make-instance 'task :title title :description desc))))
+          (run-hooks "after-save-task" task)
+          (when *current-project*
+            (create-link *current-project* task "contains"))
+          (setf *current-object* task)
+          (format t "~&Task created from template '~A': ~A~%" template-name title))
+        (format t "~&Template '~A' not found.~%" template-name))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Export
+;;; ─────────────────────────────────────────────────────────────────────
+
+(define-astrolabe-command (com-export :name t :menu t)
+    ((object 'astrolabe-obj :prompt "object"))
+  (let ((md (export-object-markdown object)))
+    (setf *shell-command* (format nil "Export: ~A" (obj-display-title object)))
+    (setf *shell-output* md)
+    (setf *shell-exit-code* 0)
+    (setf *current-view* :shell)
+    (format t "~&Exported ~A to detail pane.~%" (obj-display-title object))))
+
+(define-astrolabe-command (com-export-file :name t :menu t)
+    ((object 'astrolabe-obj :prompt "object")
+     (path 'string :prompt "File path"))
+  (let ((md (export-object-markdown object)))
+    (with-open-file (s path :direction :output :if-exists :supersede)
+      (write-string md s))
+    (format t "~&Exported ~A to ~A~%" (obj-display-title object) path)))
+
+(define-astrolabe-command (com-export-project-report :name t :menu t)
+    ((project 'project-presentation :prompt "project"))
+  (let ((report (export-project-report project)))
+    (setf *shell-command* (format nil "Report: ~A" (project-name project)))
+    (setf *shell-output* report)
+    (setf *shell-exit-code* 0)
+    (setf *current-view* :shell)
+    (format t "~&Generated report for ~A.~%" (project-name project))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Scheduled actions
+;;; ─────────────────────────────────────────────────────────────────────
+
+(define-astrolabe-command (com-check-reminders :name t :menu t) ()
+  (let ((count (check-reminders)))
+    (if (> count 0)
+        (format t "~&~D reminder~:P created.~%" count)
+        (format t "~&No new reminders.~%"))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Batch operations
+;;; ─────────────────────────────────────────────────────────────────────
+
+(define-astrolabe-command (com-select :name t :menu t)
+    ((object 'astrolabe-obj :prompt "object"))
+  (let ((count (batch-select object)))
+    (format t "~&Selected ~A (~D in batch)~%" (obj-display-title object) count)))
+
+(define-astrolabe-command (com-deselect :name t :menu t)
+    ((object 'astrolabe-obj :prompt "object"))
+  (let ((count (batch-deselect object)))
+    (format t "~&Deselected ~A (~D in batch)~%" (obj-display-title object) count)))
+
+(define-astrolabe-command (com-clear-selection :name t :menu t) ()
+  (batch-clear)
+  (format t "~&Selection cleared.~%"))
+
+(define-astrolabe-command (com-show-selection :name t :menu t) ()
+  (if *batch-selection*
+      (progn
+        (format t "~&~D objects selected:~%" (length *batch-selection*))
+        (dolist (obj *batch-selection*)
+          (format t "  ~A: ~A~%" (obj-type-name obj) (obj-display-title obj))))
+      (format t "~&No objects selected.~%")))
+
+(define-astrolabe-command (com-batch-tag :name t :menu t)
+    ((tag-name 'string :prompt "Tag name"))
+  (if *batch-selection*
+      (let ((count (batch-apply-tag tag-name)))
+        (format t "~&Tagged ~D objects with '~A'.~%" count tag-name))
+      (format t "~&No objects selected.~%")))
+
+(define-astrolabe-command (com-batch-complete :name t :menu t) ()
+  (if *batch-selection*
+      (let ((count (batch-complete-tasks)))
+        (format t "~&Completed ~D task~:P.~%" count)
+        (batch-clear))
+      (format t "~&No objects selected.~%")))
+
+(define-astrolabe-command (com-batch-delete :name t :menu t) ()
+  (if *batch-selection*
+      (progn
+        (format t "~&Delete ~D objects? " (length *batch-selection*))
+        (let ((confirm (accept 'string :prompt "yes/no" :default "no")))
+          (when (string-equal confirm "yes")
+            (let ((count (batch-delete)))
+              (format t "~&Deleted ~D objects.~%" count)))))
+      (format t "~&No objects selected.~%")))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Reload user commands
+;;; ─────────────────────────────────────────────────────────────────────
+
+(define-astrolabe-command (com-reload-commands :name t :menu t) ()
+  (if (load-user-commands)
+      (format t "~&User commands reloaded.~%")
+      (format t "~&No user commands file found at ~A~%" *user-commands-file*)))
+
+;;; ─────────────────────────────────────────────────────────────────────
 ;;; Quit
 ;;; ─────────────────────────────────────────────────────────────────────
 

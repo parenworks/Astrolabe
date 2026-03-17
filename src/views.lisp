@@ -23,6 +23,7 @@
     (:feeds          (display-feeds-nav pane))
     (:feed-items     (display-feed-items-nav pane))
     (:notifications  (display-notifications-nav pane))
+    (:shell          (display-shell-nav pane))
     (t               (display-home-nav pane))))
 
 (defun display-home-nav (pane)
@@ -445,6 +446,34 @@
           (format pane "    (no notifications)~%")))))
 
 ;;; ─────────────────────────────────────────────────────────────────────
+;;; Shell output view
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defun display-shell-nav (pane)
+  "Display shell command output in the navigation pane."
+  (with-drawing-options (pane :ink +white+)
+    (with-text-face (pane :bold)
+      (format pane "  SHELL~%")))
+  (when *shell-command*
+    (with-drawing-options (pane :ink +cyan+)
+      (format pane "  $ ~A~%" *shell-command*))
+    (with-drawing-options (pane :ink (if (and *shell-exit-code* (= *shell-exit-code* 0))
+                                        +green+ +red+))
+      (format pane "  Exit: ~A~%" (or *shell-exit-code* "?"))))
+  (terpri pane)
+  (when *shell-output*
+    (with-drawing-options (pane :ink +white+)
+      ;; Truncate very long output for the nav pane
+      (let ((lines (cl-ppcre:split "\\n" *shell-output*))
+            (max-lines 40))
+        (loop for line in lines
+              for i from 0 below max-lines
+              do (format pane "  ~A~%" line))
+        (when (> (length lines) max-lines)
+          (with-drawing-options (pane :ink +yellow+)
+            (format pane "  ... (~D more lines)~%" (- (length lines) max-lines))))))))
+
+;;; ─────────────────────────────────────────────────────────────────────
 ;;; Status bar
 ;;; ─────────────────────────────────────────────────────────────────────
 
@@ -471,6 +500,7 @@
                                           (obj-display-title *current-feed*)
                                           "Articles"))
                          (:notifications "Notifications")
+                         (:shell (format nil "$ ~A" (or *shell-command* "shell")))
                          (t "Home")))
            (task-count (length (db-query "SELECT id FROM tasks
                                           WHERE deleted_at IS NULL
@@ -479,10 +509,12 @@
            (now (subseq (local-time:format-timestring nil (local-time:now)
                           :format '((:hour 2) #\: (:min 2)))
                         0 5)))
-      (format pane " ~A  |  ~D open tasks~A  |  ~A"
-              view-label task-count
-              (if (> notif-count 0) (format nil "  |  ~D notif" notif-count) "")
-              now))))
+      (let ((batch-count (length *batch-selection*)))
+        (format pane " ~A  |  ~D open tasks~A~A  |  ~A"
+                view-label task-count
+                (if (> notif-count 0) (format nil "  |  ~D notif" notif-count) "")
+                (if (> batch-count 0) (format nil "  |  ~D selected" batch-count) "")
+                now)))))
 
 ;;; ─────────────────────────────────────────────────────────────────────
 ;;; Detail pane — right side, shows selected object
@@ -491,9 +523,27 @@
 (defun display-detail (frame pane)
   "Display function for the detail pane."
   (declare (ignore frame))
-  (if *current-object*
-      (display-object-detail pane *current-object*)
-      (display-welcome pane)))
+  (cond
+    (*current-object*
+     (display-object-detail pane *current-object*))
+    ((and (eq *current-view* :shell) *shell-output*)
+     (display-shell-detail pane))
+    (t (display-welcome pane))))
+
+(defun display-shell-detail (pane)
+  "Display full shell output in the detail pane."
+  (terpri pane)
+  (with-drawing-options (pane :ink +cyan+)
+    (with-text-face (pane :bold)
+      (format pane "  $ ~A~%" (or *shell-command* ""))))
+  (with-drawing-options (pane :ink (if (and *shell-exit-code* (= *shell-exit-code* 0))
+                                      +green+ +red+))
+    (format pane "  Exit: ~A~%" (or *shell-exit-code* "?")))
+  (terpri pane)
+  (with-drawing-options (pane :ink +white+)
+    (let ((lines (cl-ppcre:split "\\n" *shell-output*)))
+      (dolist (line lines)
+        (format pane "  ~A~%" line)))))
 
 (defun display-welcome (pane)
   "Display a welcome message when nothing is selected."
@@ -515,23 +565,32 @@
     (format pane "  Actions:~%")
     (format pane "    Complete Task [task]     — mark task done~%")
     (format pane "    Link [source] [target]  — link two objects~%")
+    (format pane "    Shell [command]          — run a shell command~%")
+    (format pane "    Export [object]          — export as markdown~%")
+    (format pane "    Export Project Report    — generate status report~%")
     (terpri pane)
-    (format pane "  Delete:~%")
-    (format pane "    Delete Note [note]       — soft-delete a note~%")
-    (format pane "    Delete Task [task]       — soft-delete a task~%")
-    (format pane "    Delete Project [project] — soft-delete a project~%")
-    (format pane "    Delete Person [person]   — soft-delete a contact~%")
-    (format pane "    Delete Snippet [snippet] — soft-delete a snippet~%")
+    (format pane "  Templates:~%")
+    (format pane "    List Templates           — show available templates~%")
+    (format pane "    Capture Note Template    — note from template~%")
+    (format pane "    Add Task Template        — task from template~%")
+    (terpri pane)
+    (format pane "  Batch:~%")
+    (format pane "    Select [object]          — add to batch~%")
+    (format pane "    Batch Tag [tag]          — tag all selected~%")
+    (format pane "    Batch Complete           — complete selected tasks~%")
+    (format pane "    Batch Delete             — delete all selected~%")
     (terpri pane)
     (format pane "  Navigate:~%")
     (format pane "    Home                     — return to home~%")
+    (format pane "    Check Reminders          — check overdue tasks~%")
+    (format pane "    Reload Commands          — reload user commands~%")
     (format pane "    Quit                     — exit Astrolabe~%")
     (terpri pane)
     (format pane "  Quick keys:~%")
-    (format pane "    C-n  Capture Note~%")
-    (format pane "    C-t  Add Task~%")
-    (format pane "    C-s  Search~%")
-    (format pane "    C-h  Home~%")
+    (format pane "    C-n  Capture Note    C-b  Back~%")
+    (format pane "    C-t  Add Task        C-f  Forward~%")
+    (format pane "    C-s  Search          C-a  Agenda~%")
+    (format pane "    C-h  Home            C-g  Go (fuzzy find)~%")
     (terpri pane)
     (format pane "  Click any item to see its details.~%")
     (format pane "  Tab cycles focus between panes.~%")))

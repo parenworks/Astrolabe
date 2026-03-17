@@ -10,6 +10,7 @@
 (defun run ()
   "Start Astrolabe."
   (open-database)
+  (init-automation)
   (unwind-protect
        (let* ((port (make-instance 'clim-charmed::charmed-port
                                    :server-path '(:charmed)))

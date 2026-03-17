@@ -104,7 +104,7 @@ CREATE TABLE links (
 Astrolabe uses a three-pane layout:
 
 ```text
-┌─────────────────────┃─────────────────────────── ──┐
+┌─────────────────────┃─────────────────────────────┐
 │                     ┃                              │
 │   Navigation Pane   ┃      Detail Pane             │
 │                     ┃                              │
@@ -180,10 +180,32 @@ Notifications:
   Dismiss Notification [notif] — Mark a notification as read
   Dismiss All Notifications    — Clear all notifications
 
+Shell & Export:
+  Shell [command]              — Run shell command, show output
+  Export [object]              — Export object as Markdown
+  Export File [object] [path]  — Export to a file
+  Export Project Report [proj] — Generate project status report
+
+Templates:
+  List Templates               — Show available templates
+  Capture Note Template [name] — Create note from template
+  Add Task Template [name]     — Create task from template
+
+Batch Operations:
+  Select [object]              — Add to batch selection
+  Deselect [object]            — Remove from selection
+  Clear Selection              — Clear all selections
+  Show Selection               — List selected objects
+  Batch Tag [tag]              — Tag all selected objects
+  Batch Complete               — Complete all selected tasks
+  Batch Delete                 — Delete all selected objects
+
 Navigate:
   Home                         — Return to home view
   Back                         — Go to previous view
   Forward                      — Go forward in history
+  Check Reminders              — Check for overdue/due tasks
+  Reload Commands              — Reload user commands
   Quit                         — Exit Astrolabe
 
 Keyboard shortcuts:
@@ -246,6 +268,7 @@ astrolabe/
 │   ├── app.lisp            # Application frame definition
 │   ├── presentations.lisp  # CLIM presentation types and click translators
 │   ├── feeds.lisp          # RSS/Atom feed fetching and XML parsing (drakma + plump)
+│   ├── automation.lisp     # Hooks, templates, shell integration, export, batch ops, user commands
 │   ├── commands.lisp       # CLIM commands, keybindings
 │   ├── views.lisp          # Pane display functions (home, search, tasks, conversations, feeds, notifications, detail)
 │   └── main.lisp           # Entry point: (astrolabe:run)
