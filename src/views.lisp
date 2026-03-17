@@ -24,6 +24,7 @@
     (:feed-items     (display-feed-items-nav pane))
     (:notifications  (display-notifications-nav pane))
     (:shell          (display-shell-nav pane))
+    (:llm            (display-llm-nav pane))
     (t               (display-home-nav pane))))
 
 (defun display-home-nav (pane)
@@ -474,6 +475,54 @@
             (format pane "  ... (~D more lines)~%" (- (length lines) max-lines))))))))
 
 ;;; ─────────────────────────────────────────────────────────────────────
+;;; LLM response view
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defun display-llm-nav (pane)
+  "Display LLM response in the navigation pane."
+  (with-drawing-options (pane :ink +white+)
+    (with-text-face (pane :bold)
+      (format pane "  AI ASSISTANT~%")))
+  (when *llm-model-used*
+    (with-drawing-options (pane :ink +cyan+)
+      (format pane "  Model: ~A~%" *llm-model-used*)))
+  (terpri pane)
+  (when *llm-response*
+    (with-drawing-options (pane :ink +white+)
+      (let ((lines (cl-ppcre:split "\\n" *llm-response*))
+            (max-lines 50))
+        (loop for line in lines
+              for i from 0 below max-lines
+              do (format pane "  ~A~%" line))
+        (when (> (length lines) max-lines)
+          (with-drawing-options (pane :ink +yellow+)
+            (format pane "  ... (~D more lines, see detail pane)~%"
+                    (- (length lines) max-lines))))))))
+
+(defun display-llm-detail (pane)
+  "Display full LLM response in the detail pane."
+  (terpri pane)
+  (with-drawing-options (pane :ink +cyan+)
+    (with-text-face (pane :bold)
+      (format pane "  AI Response~%")))
+  (when *llm-model-used*
+    (with-drawing-options (pane :ink +cyan+)
+      (format pane "  Model: ~A~%" *llm-model-used*)))
+  (terpri pane)
+  (when *llm-prompt*
+    (with-drawing-options (pane :ink +yellow+)
+      (format pane "  Prompt: ~A~%"
+              (if (> (length *llm-prompt*) 120)
+                  (concatenate 'string (subseq *llm-prompt* 0 120) "...")
+                  *llm-prompt*)))
+    (terpri pane))
+  (when *llm-response*
+    (with-drawing-options (pane :ink +white+)
+      (let ((lines (cl-ppcre:split "\\n" *llm-response*)))
+        (dolist (line lines)
+          (format pane "  ~A~%" line))))))
+
+;;; ─────────────────────────────────────────────────────────────────────
 ;;; Status bar
 ;;; ─────────────────────────────────────────────────────────────────────
 
@@ -501,6 +550,7 @@
                                           "Articles"))
                          (:notifications "Notifications")
                          (:shell (format nil "$ ~A" (or *shell-command* "shell")))
+                         (:llm (format nil "AI (~A)" (or *llm-model-used* *ollama-model*)))
                          (t "Home")))
            (task-count (length (db-query "SELECT id FROM tasks
                                           WHERE deleted_at IS NULL
@@ -528,6 +578,8 @@
      (display-object-detail pane *current-object*))
     ((and (eq *current-view* :shell) *shell-output*)
      (display-shell-detail pane))
+    ((and (eq *current-view* :llm) *llm-response*)
+     (display-llm-detail pane))
     (t (display-welcome pane))))
 
 (defun display-shell-detail (pane)

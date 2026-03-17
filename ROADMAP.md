@@ -309,23 +309,32 @@ Each object displayed in the navigation or detail pane is wrapped in
 
 ---
 
-## Phase 5: Knowledge and Intelligence (v0.6)
+## Phase 5: Knowledge and Intelligence (v0.6) ✅
 
 **Goal:** Local-first AI assistance for knowledge work.
 
 ### Deliverables
 
-- [ ] **Local LLM integration** — Connect to local Ollama or llama.cpp
-  - `Summarize [note]` — Generate summary
-  - `Extract Tasks [note]` — Pull action items from text
-  - `Rewrite [note]` — Improve writing
-  - `Explain [snippet]` — Explain code or log entries
-- [ ] **Semantic search** — Vector similarity search across notes
-  - `Similar [object]` — Find related objects
-- [ ] **Auto-tagging** — Suggest tags based on content
-- [ ] **Daily digest** — AI-generated summary of the day's activity
-- [ ] **Question answering** — Ask questions about your own data
-  - `Ask [question]` — Search and synthesize from local data
+- [x] **Local LLM integration** — Ollama API client via drakma + yason
+  - Configurable model (`Set Model [name]`), defaults to Mistral 7B
+  - `Summarize [object]` — Generate concise summary
+  - `Extract Tasks [object]` — Pull action items from text
+  - `Rewrite [object]` — Improve writing clarity
+  - `Explain [object]` — Explain code, logs, or content
+  - System prompts tuned per operation for focused output
+  - Object-to-text conversion for all types (note, task, project, person, snippet)
+- [x] **Semantic search** — LLM-powered keyword extraction + FTS5 search
+  - `Similar [object]` — Extract keywords via LLM, find related objects
+- [x] **Auto-tagging** — LLM suggests and applies tags automatically
+  - `Auto Tag [object]` — Suggest 3-5 tags, apply them to the object
+- [x] **Daily digest** — AI-generated summary of recent activity
+  - `Daily Digest` — Aggregates notes, tasks, notifications; generates briefing
+- [x] **Question answering** — Ask questions with context from your data
+  - `Ask [question]` — Gathers recent notes and tasks as context, synthesizes answer
+- [x] **LLM response views** — Dedicated nav and detail pane display for AI responses
+  - Model name shown in status bar when in AI view
+  - Prompt preview and full response in detail pane
+- [x] **Availability check** — Ollama reachability tested on startup, commands gracefully degrade
 
 ---
 

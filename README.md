@@ -200,6 +200,17 @@ Batch Operations:
   Batch Complete               — Complete all selected tasks
   Batch Delete                 — Delete all selected objects
 
+AI (requires Ollama):
+  Summarize [object]           — Generate concise summary
+  Extract Tasks [object]       — Pull action items from text
+  Rewrite [object]             — Improve writing clarity
+  Explain [object]             — Explain code or content
+  Auto Tag [object]            — Suggest and apply tags via LLM
+  Ask [question]               — Q&A with context from your data
+  Daily Digest                 — AI-generated daily briefing
+  Similar [object]             — Find related objects via LLM
+  Set Model [name]             — Switch Ollama model
+
 Navigate:
   Home                         — Return to home view
   Back                         — Go to previous view
@@ -230,6 +241,9 @@ Commands accept presentation arguments — click an object on screen to provide 
 | **cl-ppcre** | Regular expressions | Quicklisp |
 | **drakma** | HTTP client for feed fetching | Quicklisp |
 | **plump** | XML/HTML parser for RSS/Atom | Quicklisp |
+| **yason** | JSON encoding/decoding | Quicklisp |
+| **flexi-streams** | Octet-to-string conversion | Quicklisp |
+| **Ollama** | Local LLM inference server | [ollama.com](https://ollama.com) |
 
 ## Quick Start
 
@@ -269,6 +283,7 @@ astrolabe/
 │   ├── presentations.lisp  # CLIM presentation types and click translators
 │   ├── feeds.lisp          # RSS/Atom feed fetching and XML parsing (drakma + plump)
 │   ├── automation.lisp     # Hooks, templates, shell integration, export, batch ops, user commands
+│   ├── llm.lisp            # Ollama LLM integration: summarize, rewrite, explain, auto-tag, Q&A
 │   ├── commands.lisp       # CLIM commands, keybindings
 │   ├── views.lisp          # Pane display functions (home, search, tasks, conversations, feeds, notifications, detail)
 │   └── main.lisp           # Entry point: (astrolabe:run)

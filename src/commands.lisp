@@ -665,6 +665,142 @@
       (format t "~&No objects selected.~%")))
 
 ;;; ─────────────────────────────────────────────────────────────────────
+;;; LLM commands
+;;; ─────────────────────────────────────────────────────────────────────
+
+(define-astrolabe-command (com-summarize :name t :menu t)
+    ((object 'astrolabe-obj :prompt "object"))
+  (if (not *llm-available*)
+      (format t "~&Ollama is not running. Start it with: ollama serve~%")
+      (progn
+        (format t "~&Summarizing ~A...~%" (obj-display-title object))
+        (let ((result (llm-summarize object)))
+          (if result
+              (progn
+                (setf *current-view* :llm)
+                (setf *current-object* nil)
+                (format t "~&Done.~%"))
+              (format t "~&LLM error: ~A~%" (or *llm-response* "unknown")))))))
+
+(define-astrolabe-command (com-extract-tasks :name t :menu t)
+    ((object 'astrolabe-obj :prompt "object"))
+  (if (not *llm-available*)
+      (format t "~&Ollama is not running. Start it with: ollama serve~%")
+      (progn
+        (format t "~&Extracting tasks from ~A...~%" (obj-display-title object))
+        (let ((result (llm-extract-tasks object)))
+          (if result
+              (progn
+                (setf *current-view* :llm)
+                (setf *current-object* nil)
+                (format t "~&Done.~%"))
+              (format t "~&LLM error: ~A~%" (or *llm-response* "unknown")))))))
+
+(define-astrolabe-command (com-rewrite :name t :menu t)
+    ((object 'astrolabe-obj :prompt "object"))
+  (if (not *llm-available*)
+      (format t "~&Ollama is not running. Start it with: ollama serve~%")
+      (progn
+        (format t "~&Rewriting ~A...~%" (obj-display-title object))
+        (let ((result (llm-rewrite object)))
+          (if result
+              (progn
+                (setf *current-view* :llm)
+                (setf *current-object* nil)
+                (format t "~&Done.~%"))
+              (format t "~&LLM error: ~A~%" (or *llm-response* "unknown")))))))
+
+(define-astrolabe-command (com-explain :name t :menu t)
+    ((object 'astrolabe-obj :prompt "object"))
+  (if (not *llm-available*)
+      (format t "~&Ollama is not running. Start it with: ollama serve~%")
+      (progn
+        (format t "~&Explaining ~A...~%" (obj-display-title object))
+        (let ((result (llm-explain object)))
+          (if result
+              (progn
+                (setf *current-view* :llm)
+                (setf *current-object* nil)
+                (format t "~&Done.~%"))
+              (format t "~&LLM error: ~A~%" (or *llm-response* "unknown")))))))
+
+(define-astrolabe-command (com-auto-tag :name t :menu t)
+    ((object 'astrolabe-obj :prompt "object"))
+  (if (not *llm-available*)
+      (format t "~&Ollama is not running. Start it with: ollama serve~%")
+      (progn
+        (format t "~&Suggesting tags for ~A...~%" (obj-display-title object))
+        (let ((tags (llm-auto-tag object)))
+          (if tags
+              (format t "~&Applied tags: ~{~A~^, ~}~%" tags)
+              (format t "~&No tags suggested.~%"))))))
+
+(define-astrolabe-command (com-ask :name t :menu t)
+    ((question 'string :prompt "Question"))
+  (if (not *llm-available*)
+      (format t "~&Ollama is not running. Start it with: ollama serve~%")
+      (progn
+        (format t "~&Thinking...~%")
+        ;; Gather context from recent notes and tasks
+        (let* ((notes (load-recent-notes 5))
+               (tasks (load-open-tasks 10))
+               (context (with-output-to-string (s)
+                          (dolist (n notes)
+                            (format s "Note: ~A~%" (note-title n))
+                            (when (note-body n) (format s "~A~%~%" (note-body n))))
+                          (dolist (tk tasks)
+                            (format s "Task [~A]: ~A~A~%"
+                                    (task-priority tk) (task-title tk)
+                                    (if (task-due-date tk)
+                                        (format nil " (due ~A)" (task-due-date tk)) "")))))
+               (result (llm-ask question :context context)))
+          (if result
+              (progn
+                (setf *current-view* :llm)
+                (setf *current-object* nil)
+                (format t "~&Done.~%"))
+              (format t "~&LLM error: ~A~%" (or *llm-response* "unknown")))))))
+
+(define-astrolabe-command (com-daily-digest :name t :menu t) ()
+  (if (not *llm-available*)
+      (format t "~&Ollama is not running. Start it with: ollama serve~%")
+      (progn
+        (format t "~&Generating daily digest...~%")
+        (let ((result (llm-daily-digest)))
+          (if result
+              (progn
+                (setf *current-view* :llm)
+                (setf *current-object* nil)
+                (format t "~&Done.~%"))
+              (format t "~&LLM error: ~A~%" (or *llm-response* "unknown")))))))
+
+(define-astrolabe-command (com-similar :name t :menu t)
+    ((object 'astrolabe-obj :prompt "object"))
+  (if (not *llm-available*)
+      (format t "~&Ollama is not running. Start it with: ollama serve~%")
+      (progn
+        (format t "~&Finding similar objects...~%")
+        ;; Use the LLM to generate search keywords, then run FTS
+        (let* ((text (object-to-llm-text object))
+               (keywords (llm-generate
+                          (format nil "Extract 3-5 search keywords from this text. Output only the keywords separated by spaces, nothing else:~%~%~A" text)
+                          :system "Output only space-separated keywords, no explanation.")))
+          (if keywords
+              (let* ((cleaned (string-trim '(#\Space #\Newline #\Return) keywords))
+                     (results (search-all cleaned)))
+                (setf *search-query* (format nil "Similar to: ~A" (obj-display-title object)))
+                (setf *search-results* (remove object results :test #'eq))
+                (setf *current-view* :search)
+                (setf *current-object* nil)
+                (format t "~&Found ~D similar objects.~%" (length *search-results*)))
+              (format t "~&Could not generate search terms.~%"))))))
+
+(define-astrolabe-command (com-set-model :name t :menu t)
+    ((model-name 'string :prompt "Model name"))
+  (setf *ollama-model* model-name)
+  (format t "~&LLM model set to: ~A~%" model-name))
+
+;;; ─────────────────────────────────────────────────────────────────────
 ;;; Reload user commands
 ;;; ─────────────────────────────────────────────────────────────────────
 

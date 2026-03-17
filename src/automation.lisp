@@ -332,7 +332,8 @@
 ;;; ─────────────────────────────────────────────────────────────────────
 
 (defun init-automation ()
-  "Initialize the automation subsystem: load user commands, templates, check reminders."
+  "Initialize the automation subsystem: load user commands, templates, check reminders, LLM."
   (ensure-templates-dir)
   (load-user-commands)
-  (check-reminders))
+  (check-reminders)
+  (check-llm-availability))

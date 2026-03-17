@@ -9,7 +9,9 @@
                #:local-time
                #:cl-ppcre
                #:drakma
-               #:plump)
+               #:plump
+               #:yason
+               #:flexi-streams)
   :serial t
   :components ((:module "src"
                 :serial t
@@ -21,6 +23,7 @@
                              (:file "presentations")
                              (:file "feeds")
                              (:file "automation")
+                             (:file "llm")
                              (:file "commands")
                              (:file "views")
                              (:file "main")))))
