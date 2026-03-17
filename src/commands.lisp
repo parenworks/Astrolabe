@@ -373,6 +373,148 @@
   (format t "~&Appended to note.~%"))
 
 ;;; ─────────────────────────────────────────────────────────────────────
+;;; XMPP — Show conversations, message thread, send message
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defvar *current-conversation* nil)
+(defvar *current-messages* nil)
+
+(define-astrolabe-command (com-show-conversations :name t :menu t) ()
+  (push-nav-state)
+  (setf *current-view* :conversations)
+  (setf *current-object* nil))
+
+(define-astrolabe-command (com-show-conversation :name t :menu t)
+    ((conv 'conversation-presentation :prompt "conversation"))
+  (push-nav-state)
+  (setf *current-conversation* conv)
+  (setf *current-messages* (nreverse (load-messages (conv-id conv))))
+  (mark-conversation-read conv)
+  (setf *current-view* :conversation)
+  (setf *current-object* conv))
+
+(define-astrolabe-command (com-message :name t :menu t)
+    ((jid 'string :prompt "JID")
+     (body 'string :prompt "Message"))
+  (let ((conv (or (load-conversation-by-jid jid)
+                  (save-conversation (make-instance 'conversation
+                                                    :jid jid
+                                                    :display-name jid
+                                                    :conv-type "dm")))))
+    (save-xmpp-message (make-instance 'xmpp-message
+                                      :conversation-id (conv-id conv)
+                                      :sender-nick "me"
+                                      :body body))
+    (create-notification "message" (format nil "Sent to ~A" jid)
+                         :body body
+                         :object-type "conversation" :object-id (conv-id conv))
+    (format t "~&Message sent to ~A~%" jid)))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; RSS/Atom feeds
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defvar *current-feed* nil)
+(defvar *current-feed-items* nil)
+
+(define-astrolabe-command (com-subscribe :name t :menu t)
+    ((url 'string :prompt "Feed URL"))
+  (let ((existing (db-query-single
+                   (format nil "SELECT ~A FROM feeds WHERE url=? AND deleted_at IS NULL" *feed-cols*) url)))
+    (if existing
+        (format t "~&Already subscribed to ~A~%" url)
+        (let ((feed (save-feed (make-instance 'feed :url url :title url))))
+          (format t "~&Subscribed to ~A~%" url)
+          (create-notification "feed" (format nil "Subscribed: ~A" url)
+                               :object-type "feed" :object-id (feed-id feed))))))
+
+(define-astrolabe-command (com-unsubscribe :name t :menu t)
+    ((feed 'feed-presentation :prompt "feed"))
+  (format t "~&Unsubscribe from '~A'? " (obj-display-title feed))
+  (let ((confirm (accept 'string :prompt "yes/no" :default "no")))
+    (when (string-equal confirm "yes")
+      (delete-feed feed)
+      (format t "~&Unsubscribed from ~A~%" (obj-display-title feed)))))
+
+(define-astrolabe-command (com-show-feeds :name t :menu t) ()
+  (push-nav-state)
+  (setf *current-view* :feeds)
+  (setf *current-object* nil))
+
+(define-astrolabe-command (com-show-feed :name t :menu t)
+    ((feed 'feed-presentation :prompt "feed"))
+  (push-nav-state)
+  (setf *current-feed* feed)
+  (setf *current-feed-items* (load-feed-items (feed-id feed)))
+  (setf *current-view* :feed-items)
+  (setf *current-object* feed))
+
+(define-astrolabe-command (com-fetch-feed :name t :menu t)
+    ((feed 'feed-presentation :prompt "feed"))
+  (format t "~&Fetching ~A...~%" (obj-display-title feed))
+  (let ((new-count (fetch-and-store-feed feed)))
+    (if (feed-last-error feed)
+        (format t "~&Error: ~A~%" (feed-last-error feed))
+        (progn
+          (format t "~&~D new article~:P~%" new-count)
+          (when (> new-count 0)
+            (create-notification "feed" (format nil "~D new from ~A" new-count (obj-display-title feed))
+                                 :object-type "feed" :object-id (feed-id feed)))))))
+
+(define-astrolabe-command (com-fetch-all-feeds :name t :menu t) ()
+  (let ((feeds (load-feeds 100))
+        (total 0))
+    (dolist (feed feeds)
+      (format t "~&Fetching ~A... " (obj-display-title feed))
+      (let ((n (fetch-and-store-feed feed)))
+        (if (feed-last-error feed)
+            (format t "error~%")
+            (progn
+              (format t "~D new~%" n)
+              (incf total n)))))
+    (format t "~&Done. ~D new article~:P total.~%" total)
+    (when (> total 0)
+      (create-notification "feed" (format nil "~D new articles from ~D feeds" total (length feeds))))))
+
+(define-astrolabe-command (com-show-feed-item :name t :menu t)
+    ((fi 'feed-item-presentation :prompt "article"))
+  (push-nav-state)
+  (mark-feed-item-read fi)
+  (setf *current-object* fi))
+
+(define-astrolabe-command (com-capture-article :name t :menu t)
+    ((fi 'feed-item-presentation :prompt "article"))
+  (let ((note (save-note (make-instance 'note
+                                        :title (or (fi-title fi) "Captured article")
+                                        :body (format nil "~A~%~%Source: ~A~%~%~A"
+                                                      (or (fi-title fi) "")
+                                                      (or (fi-url fi) "")
+                                                      (or (fi-summary fi) (fi-content fi) ""))))))
+    (setf *current-object* note)
+    (format t "~&Captured article as note: ~A~%" (note-title note))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Notifications
+;;; ─────────────────────────────────────────────────────────────────────
+
+(define-astrolabe-command (com-show-notifications :name t :menu t) ()
+  (push-nav-state)
+  (setf *current-view* :notifications)
+  (setf *current-object* nil))
+
+(define-astrolabe-command (com-dismiss-notification :name t :menu t)
+    ((notif 'notification-presentation :prompt "notification"))
+  (mark-notification-read notif)
+  (when (and (notif-object-type notif) (notif-object-id notif))
+    (let ((obj (load-object-by-type-and-id (notif-object-type notif) (notif-object-id notif))))
+      (when obj (setf *current-object* obj))))
+  (format t "~&Notification dismissed.~%"))
+
+(define-astrolabe-command (com-dismiss-all-notifications :name t :menu t) ()
+  (mark-all-notifications-read)
+  (format t "~&All notifications dismissed.~%"))
+
+;;; ─────────────────────────────────────────────────────────────────────
 ;;; Quit
 ;;; ─────────────────────────────────────────────────────────────────────
 

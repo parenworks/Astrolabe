@@ -104,7 +104,7 @@ CREATE TABLE links (
 Astrolabe uses a three-pane layout:
 
 ```text
-┌─────────────────────┃─────────────────────────────┐
+┌─────────────────────┃─────────────────────────── ──┐
 │                     ┃                              │
 │   Navigation Pane   ┃      Detail Pane             │
 │                     ┃                              │
@@ -114,7 +114,7 @@ Astrolabe uses a three-pane layout:
 │   - Active tasks    ┃   - Note body                │
 │   - Search results  ┃   - Task details + links     │
 │   - Inbox / Alerts  ┃   - Project dashboard        │
-│                     ┃   - Person profile            │
+│                     ┃   - Person profile           │
 │                     ┃                              │
 │                     ┃                              │
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -160,6 +160,26 @@ Search & Filter:
 Delete:
   Delete Note/Task/Project/Person/Snippet — Soft delete (with confirmation)
 
+Messaging (XMPP):
+  Show Conversations           — List all conversations
+  Show Conversation [conv]     — View message thread
+  Message [jid] [body]         — Send a message (auto-creates conversation)
+
+Feeds (RSS/Atom):
+  Show Feeds                   — List subscribed feeds
+  Subscribe [url]              — Add a feed subscription
+  Unsubscribe [feed]           — Remove a feed (with confirmation)
+  Fetch Feed [feed]            — Download and parse a feed
+  Fetch All Feeds              — Refresh all feed subscriptions
+  Show Feed [feed]             — View articles in a feed
+  Show Feed Item [item]        — Read an article
+  Capture Article [item]       — Save article as a note
+
+Notifications:
+  Show Notifications           — View all notifications
+  Dismiss Notification [notif] — Mark a notification as read
+  Dismiss All Notifications    — Clear all notifications
+
 Navigate:
   Home                         — Return to home view
   Back                         — Go to previous view
@@ -186,6 +206,8 @@ Commands accept presentation arguments — click an object on screen to provide 
 | **cl-sqlite** | SQLite3 bindings for CL | Quicklisp |
 | **local-time** | Date/time handling | Quicklisp |
 | **cl-ppcre** | Regular expressions | Quicklisp |
+| **drakma** | HTTP client for feed fetching | Quicklisp |
+| **plump** | XML/HTML parser for RSS/Atom | Quicklisp |
 
 ## Quick Start
 
@@ -219,12 +241,13 @@ astrolabe/
 ├── src/
 │   ├── package.lisp        # Package definition
 │   ├── config.lisp         # Configuration and paths
-│   ├── db.lisp             # Database schema (10 tables), migrations, FTS5 indexes
-│   ├── model.lisp          # CLOS model (note, task, project, person, snippet, bookmark, tags, links, search)
+│   ├── db.lisp             # Database schema (15 tables), versioned migrations, FTS5 indexes
+│   ├── model.lisp          # CLOS model (note, task, project, person, snippet, bookmark, conversation, message, feed, feed-item, notification, tags, links, search)
 │   ├── app.lisp            # Application frame definition
 │   ├── presentations.lisp  # CLIM presentation types and click translators
+│   ├── feeds.lisp          # RSS/Atom feed fetching and XML parsing (drakma + plump)
 │   ├── commands.lisp       # CLIM commands, keybindings
-│   ├── views.lisp          # Pane display functions (home, search, tasks, tag filter, detail)
+│   ├── views.lisp          # Pane display functions (home, search, tasks, conversations, feeds, notifications, detail)
 │   └── main.lisp           # Entry point: (astrolabe:run)
 ```
 

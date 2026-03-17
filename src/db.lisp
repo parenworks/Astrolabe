@@ -4,7 +4,7 @@
 (in-package #:astrolabe)
 
 ;;; Current schema version — increment when adding migrations.
-(defvar *schema-version* 1)
+(defvar *schema-version* 2)
 
 ;;; The active database handle (set by open-database).
 (defvar *db* nil)
@@ -48,6 +48,8 @@
   (let ((version (current-db-version)))
     (when (< version 1)
       (apply-schema-v1))
+    (when (< version 2)
+      (apply-schema-v2))
     ;; Record version
     (when (< version *schema-version*)
       (sqlite:execute-non-query
@@ -289,6 +291,112 @@
   (sqlite:execute-non-query *db*
     "CREATE VIRTUAL TABLE IF NOT EXISTS projects_fts
        USING fts5(name, description, notes, content=projects, content_rowid=id)"))
+
+(defun apply-schema-v2 ()
+  "Phase 3: Communication integration tables."
+
+  ;; ── Conversations ──────────────────────────────────────────────────
+  ;; An XMPP conversation (DM or MUC).
+  (sqlite:execute-non-query *db*
+    "CREATE TABLE IF NOT EXISTS conversations (
+       id          INTEGER PRIMARY KEY AUTOINCREMENT,
+       jid         TEXT    NOT NULL UNIQUE,           -- full JID
+       display_name TEXT,                              -- short display name
+       type        TEXT    NOT NULL DEFAULT 'dm',     -- dm | muc
+       person_id   INTEGER REFERENCES persons(id),    -- linked person for DMs
+       project_id  INTEGER REFERENCES projects(id),   -- optionally linked project
+       unread_count INTEGER NOT NULL DEFAULT 0,
+       pinned      INTEGER NOT NULL DEFAULT 0,
+       last_activity TEXT,                             -- timestamp of last message
+       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       deleted_at  TEXT
+     )")
+  (sqlite:execute-non-query *db*
+    "CREATE INDEX IF NOT EXISTS idx_conv_jid ON conversations(jid)")
+
+  ;; ── Messages ───────────────────────────────────────────────────────
+  ;; Stored XMPP messages.
+  (sqlite:execute-non-query *db*
+    "CREATE TABLE IF NOT EXISTS messages (
+       id              INTEGER PRIMARY KEY AUTOINCREMENT,
+       conversation_id INTEGER NOT NULL REFERENCES conversations(id),
+       sender_jid      TEXT,
+       sender_nick     TEXT,
+       body            TEXT    NOT NULL,
+       stanza_id       TEXT,                           -- XMPP stanza ID
+       level           TEXT,                           -- NULL=normal, join, part, error, system
+       encrypted       INTEGER NOT NULL DEFAULT 0,     -- 1 = OMEMO
+       edited          INTEGER NOT NULL DEFAULT 0,
+       created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+     )")
+  (sqlite:execute-non-query *db*
+    "CREATE INDEX IF NOT EXISTS idx_msg_conv ON messages(conversation_id)")
+  (sqlite:execute-non-query *db*
+    "CREATE INDEX IF NOT EXISTS idx_msg_date ON messages(created_at)")
+
+  ;; ── Feeds ──────────────────────────────────────────────────────────
+  ;; RSS/Atom feed subscriptions.
+  (sqlite:execute-non-query *db*
+    "CREATE TABLE IF NOT EXISTS feeds (
+       id          INTEGER PRIMARY KEY AUTOINCREMENT,
+       url         TEXT    NOT NULL UNIQUE,
+       title       TEXT,
+       description TEXT    DEFAULT '',
+       site_url    TEXT,                               -- link to the site itself
+       feed_type   TEXT    DEFAULT 'rss',              -- rss | atom
+       last_fetched TEXT,                              -- last successful fetch timestamp
+       fetch_interval INTEGER NOT NULL DEFAULT 3600,   -- seconds between fetches
+       unread_count INTEGER NOT NULL DEFAULT 0,
+       error_count  INTEGER NOT NULL DEFAULT 0,
+       last_error   TEXT,
+       pinned      INTEGER NOT NULL DEFAULT 0,
+       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       deleted_at  TEXT
+     )")
+
+  ;; ── Feed Items ─────────────────────────────────────────────────────
+  ;; Individual articles/entries from feeds.
+  (sqlite:execute-non-query *db*
+    "CREATE TABLE IF NOT EXISTS feed_items (
+       id          INTEGER PRIMARY KEY AUTOINCREMENT,
+       feed_id     INTEGER NOT NULL REFERENCES feeds(id),
+       title       TEXT,
+       url         TEXT,
+       author      TEXT,
+       summary     TEXT    DEFAULT '',
+       content     TEXT    DEFAULT '',
+       published_at TEXT,
+       guid        TEXT,                               -- unique ID from the feed
+       read        INTEGER NOT NULL DEFAULT 0,         -- 1 = read
+       starred     INTEGER NOT NULL DEFAULT 0,         -- 1 = starred/saved
+       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+       UNIQUE(feed_id, guid)
+     )")
+  (sqlite:execute-non-query *db*
+    "CREATE INDEX IF NOT EXISTS idx_fi_feed ON feed_items(feed_id)")
+  (sqlite:execute-non-query *db*
+    "CREATE INDEX IF NOT EXISTS idx_fi_read ON feed_items(read)")
+
+  ;; ── Notifications ──────────────────────────────────────────────────
+  ;; Unified notification queue.
+  (sqlite:execute-non-query *db*
+    "CREATE TABLE IF NOT EXISTS notifications (
+       id          INTEGER PRIMARY KEY AUTOINCREMENT,
+       type        TEXT    NOT NULL,                   -- message, feed, task_overdue, mention, system
+       title       TEXT    NOT NULL,
+       body        TEXT    DEFAULT '',
+       object_type TEXT,                               -- optional: what object this relates to
+       object_id   INTEGER,
+       read        INTEGER NOT NULL DEFAULT 0,         -- 1 = dismissed
+       created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+     )")
+  (sqlite:execute-non-query *db*
+    "CREATE INDEX IF NOT EXISTS idx_notif_read ON notifications(read)")
+
+  ;; ── FTS for messages ───────────────────────────────────────────────
+  (sqlite:execute-non-query *db*
+    "CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts
+       USING fts5(body, sender_nick, content=messages, content_rowid=id)"))
 
 ;;; ─────────────────────────────────────────────────────────────────────
 ;;; Query helpers

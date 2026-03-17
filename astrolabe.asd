@@ -7,7 +7,9 @@
                #:mcclim-charmed
                #:sqlite
                #:local-time
-               #:cl-ppcre)
+               #:cl-ppcre
+               #:drakma
+               #:plump)
   :serial t
   :components ((:module "src"
                 :serial t
@@ -17,6 +19,7 @@
                              (:file "model")
                              (:file "app")
                              (:file "presentations")
+                             (:file "feeds")
                              (:file "commands")
                              (:file "views")
                              (:file "main")))))

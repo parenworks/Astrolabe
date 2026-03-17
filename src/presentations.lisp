@@ -24,6 +24,18 @@
 (define-presentation-type astrolabe-obj ()
   :description "any Astrolabe object")
 
+(define-presentation-type conversation-presentation ()
+  :description "a conversation")
+
+(define-presentation-type feed-presentation ()
+  :description "a feed")
+
+(define-presentation-type feed-item-presentation ()
+  :description "a feed item")
+
+(define-presentation-type notification-presentation ()
+  :description "a notification")
+
 ;;; ─────────────────────────────────────────────────────────────────────
 ;;; Display helpers — present objects as clickable presentations
 ;;; ─────────────────────────────────────────────────────────────────────
@@ -87,6 +99,47 @@
               (obj-display-title snippet)
               (snippet-content-type snippet)))))
 
+(defun present-conversation (pane conv)
+  "Display a conversation as a clickable presentation in PANE."
+  (with-output-as-presentation (pane conv 'conversation-presentation)
+    (let ((unread (conv-unread-count conv)))
+      (with-drawing-options (pane :ink (if (> unread 0) +yellow+ +white+))
+        (format pane "  ~A~A  (~A)~%"
+                (if (string-equal (conv-type conv) "muc") "#" "")
+                (obj-display-title conv)
+                (if (> unread 0)
+                    (format nil "~D unread" unread)
+                    (conv-type conv)))))))
+
+(defun present-feed (pane feed)
+  "Display a feed subscription as a clickable presentation in PANE."
+  (with-output-as-presentation (pane feed 'feed-presentation)
+    (let ((unread (feed-unread-count feed)))
+      (with-drawing-options (pane :ink (if (> unread 0) +yellow+ +white+))
+        (format pane "  ~A~A~%"
+                (obj-display-title feed)
+                (if (> unread 0)
+                    (format nil "  (~D)" unread)
+                    ""))))))
+
+(defun present-feed-item (pane fi)
+  "Display a feed item as a clickable presentation in PANE."
+  (with-output-as-presentation (pane fi 'feed-item-presentation)
+    (with-drawing-options (pane :ink (if (= (fi-read fi) 0) +cyan+ +white+))
+      (format pane "  ~A~A~%"
+              (obj-display-title fi)
+              (if (fi-author fi)
+                  (format nil "  — ~A" (fi-author fi))
+                  "")))))
+
+(defun present-notification (pane notif)
+  "Display a notification as a clickable presentation in PANE."
+  (with-output-as-presentation (pane notif 'notification-presentation)
+    (with-drawing-options (pane :ink (if (= (notif-read notif) 0) +yellow+ +white+))
+      (format pane "  [~A] ~A~%"
+              (notif-type notif)
+              (notif-title notif)))))
+
 ;;; ─────────────────────────────────────────────────────────────────────
 ;;; Presentation translators — click-to-navigate
 ;;; ─────────────────────────────────────────────────────────────────────
@@ -123,5 +176,33 @@
     (snippet-presentation com-show-snippet astrolabe
      :gesture :select
      :documentation "Show this snippet")
+    (object)
+  (list object))
+
+(define-presentation-to-command-translator click-conversation
+    (conversation-presentation com-show-conversation astrolabe
+     :gesture :select
+     :documentation "Show this conversation")
+    (object)
+  (list object))
+
+(define-presentation-to-command-translator click-feed
+    (feed-presentation com-show-feed astrolabe
+     :gesture :select
+     :documentation "Show this feed")
+    (object)
+  (list object))
+
+(define-presentation-to-command-translator click-feed-item
+    (feed-item-presentation com-show-feed-item astrolabe
+     :gesture :select
+     :documentation "Show this article")
+    (object)
+  (list object))
+
+(define-presentation-to-command-translator click-notification
+    (notification-presentation com-dismiss-notification astrolabe
+     :gesture :select
+     :documentation "Dismiss this notification")
     (object)
   (list object))

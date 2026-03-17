@@ -16,9 +16,14 @@
     (:search     (display-search-nav pane))
     (:tag-filter (display-tag-filter-nav pane))
     (:tasks      (display-tasks-nav pane))
-    (:agenda     (display-agenda-nav pane))
-    (:go-results (display-go-results-nav pane))
-    (t           (display-home-nav pane))))
+    (:agenda         (display-agenda-nav pane))
+    (:go-results     (display-go-results-nav pane))
+    (:conversations  (display-conversations-nav pane))
+    (:conversation   (display-conversation-nav pane))
+    (:feeds          (display-feeds-nav pane))
+    (:feed-items     (display-feed-items-nav pane))
+    (:notifications  (display-notifications-nav pane))
+    (t               (display-home-nav pane))))
 
 (defun display-home-nav (pane)
   "Display the home screen in the navigation pane."
@@ -86,6 +91,37 @@
         (with-drawing-options (pane :ink +white+)
           (format pane "    (no snippets yet)~%"))))
   (terpri pane)
+
+  ;; Notifications summary
+  (let ((notif-count (unread-notification-count)))
+    (when (> notif-count 0)
+      (with-drawing-options (pane :ink +yellow+)
+        (with-text-face (pane :bold)
+          (format pane "  Notifications (~D)~%" notif-count)))
+      (let ((recent (load-notifications :limit 3 :unread-only t)))
+        (dolist (n recent)
+          (present-notification pane n)))
+      (terpri pane)))
+
+  ;; Conversations summary
+  (let ((convs (load-conversations 5)))
+    (when convs
+      (with-drawing-options (pane :ink +cyan+)
+        (with-text-face (pane :bold)
+          (format pane "  Conversations~%")))
+      (dolist (conv convs)
+        (present-conversation pane conv))
+      (terpri pane)))
+
+  ;; Feeds summary
+  (let ((feeds (load-feeds 5)))
+    (when feeds
+      (with-drawing-options (pane :ink +green+)
+        (with-text-face (pane :bold)
+          (format pane "  Feeds~%")))
+      (dolist (feed feeds)
+        (present-feed pane feed))
+      (terpri pane)))
 
   ;; Bookmarks
   (let ((bookmarks (load-bookmarks 10)))
@@ -176,11 +212,14 @@
 (defun present-object (pane obj)
   "Present any astrolabe object as a clickable presentation."
   (cond
-    ((typep obj 'note)    (present-note pane obj))
-    ((typep obj 'task)    (present-task pane obj))
-    ((typep obj 'project) (present-project pane obj))
-    ((typep obj 'person)  (present-person pane obj))
-    ((typep obj 'snippet) (present-snippet pane obj))))
+    ((typep obj 'note)         (present-note pane obj))
+    ((typep obj 'task)         (present-task pane obj))
+    ((typep obj 'project)      (present-project pane obj))
+    ((typep obj 'person)       (present-person pane obj))
+    ((typep obj 'snippet)      (present-snippet pane obj))
+    ((typep obj 'conversation) (present-conversation pane obj))
+    ((typep obj 'feed)         (present-feed pane obj))
+    ((typep obj 'feed-item)    (present-feed-item pane obj))))
 
 ;;; ─────────────────────────────────────────────────────────────────────
 ;;; Search results view
@@ -306,6 +345,106 @@
         (format pane "    (no matches)~%"))))
 
 ;;; ─────────────────────────────────────────────────────────────────────
+;;; Conversations view
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defun display-conversations-nav (pane)
+  "Display the conversation list."
+  (with-drawing-options (pane :ink +white+)
+    (with-text-face (pane :bold)
+      (format pane "  CONVERSATIONS~%")))
+  (terpri pane)
+  (let ((convs (load-conversations)))
+    (if convs
+        (dolist (conv convs)
+          (present-conversation pane conv))
+        (with-drawing-options (pane :ink +white+)
+          (format pane "    (no conversations yet)~%")))))
+
+(defun display-conversation-nav (pane)
+  "Display a message thread in the navigation pane."
+  (if (null *current-conversation*)
+      (display-conversations-nav pane)
+      (progn
+        (with-drawing-options (pane :ink +white+)
+          (with-text-face (pane :bold)
+            (format pane "  ~A~%"
+                    (obj-display-title *current-conversation*))))
+        (with-drawing-options (pane :ink +white+)
+          (format pane "  ~A~%" (conv-jid *current-conversation*)))
+        (terpri pane)
+        (if *current-messages*
+            (dolist (msg *current-messages*)
+              (let ((nick (or (xmsg-sender-nick msg) "???"))
+                    (body (xmsg-body msg))
+                    (ts   (xmsg-created-at msg)))
+                (with-drawing-options (pane :ink (if (equal nick "me") +green+ +cyan+))
+                  (format pane "  <~A> ~A" nick body))
+                (when ts
+                  (with-drawing-options (pane :ink +white+)
+                    (format pane "  ~A" (subseq ts 11 16))))
+                (terpri pane)))
+            (with-drawing-options (pane :ink +white+)
+              (format pane "    (no messages)~%"))))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Feeds view
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defun display-feeds-nav (pane)
+  "Display the feed subscription list."
+  (with-drawing-options (pane :ink +white+)
+    (with-text-face (pane :bold)
+      (format pane "  FEEDS~%")))
+  (terpri pane)
+  (let ((feeds (load-feeds)))
+    (if feeds
+        (dolist (feed feeds)
+          (present-feed pane feed))
+        (with-drawing-options (pane :ink +white+)
+          (format pane "    (no subscriptions yet)~%")
+          (format pane "    Use: Subscribe [url]~%")))))
+
+(defun display-feed-items-nav (pane)
+  "Display articles for the current feed."
+  (if (null *current-feed*)
+      (display-feeds-nav pane)
+      (progn
+        (with-drawing-options (pane :ink +white+)
+          (with-text-face (pane :bold)
+            (format pane "  ~A~%" (obj-display-title *current-feed*))))
+        (when (feed-description *current-feed*)
+          (with-drawing-options (pane :ink +white+)
+            (format pane "  ~A~%" (feed-description *current-feed*))))
+        (terpri pane)
+        (if *current-feed-items*
+            (dolist (fi *current-feed-items*)
+              (present-feed-item pane fi))
+            (with-drawing-options (pane :ink +white+)
+              (format pane "    (no articles)~%"))))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Notifications view
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defun display-notifications-nav (pane)
+  "Display notifications in the navigation pane."
+  (with-drawing-options (pane :ink +white+)
+    (with-text-face (pane :bold)
+      (format pane "  NOTIFICATIONS~%")))
+  (let ((count (unread-notification-count)))
+    (when (> count 0)
+      (with-drawing-options (pane :ink +yellow+)
+        (format pane "  ~D unread~%" count))))
+  (terpri pane)
+  (let ((notifs (load-notifications :limit 30)))
+    (if notifs
+        (dolist (notif notifs)
+          (present-notification pane notif))
+        (with-drawing-options (pane :ink +white+)
+          (format pane "    (no notifications)~%")))))
+
+;;; ─────────────────────────────────────────────────────────────────────
 ;;; Status bar
 ;;; ─────────────────────────────────────────────────────────────────────
 
@@ -323,14 +462,27 @@
                          (:tasks "Tasks")
                          (:agenda "Agenda")
                          (:go-results "Jump")
+                         (:conversations "Conversations")
+                         (:conversation (if *current-conversation*
+                                            (obj-display-title *current-conversation*)
+                                            "Chat"))
+                         (:feeds "Feeds")
+                         (:feed-items (if *current-feed*
+                                          (obj-display-title *current-feed*)
+                                          "Articles"))
+                         (:notifications "Notifications")
                          (t "Home")))
            (task-count (length (db-query "SELECT id FROM tasks
                                           WHERE deleted_at IS NULL
                                             AND status IN ('todo','active','waiting')")))
+           (notif-count (unread-notification-count))
            (now (subseq (local-time:format-timestring nil (local-time:now)
                           :format '((:hour 2) #\: (:min 2)))
                         0 5)))
-      (format pane " ~A  |  ~D open tasks  |  ~A" view-label task-count now))))
+      (format pane " ~A  |  ~D open tasks~A  |  ~A"
+              view-label task-count
+              (if (> notif-count 0) (format nil "  |  ~D notif" notif-count) "")
+              now))))
 
 ;;; ─────────────────────────────────────────────────────────────────────
 ;;; Detail pane — right side, shows selected object
@@ -606,6 +758,77 @@
         (present-person pane p))
       (terpri pane)))
   (display-links pane project))
+
+(defmethod display-object-detail (pane (conv conversation))
+  (terpri pane)
+  (with-drawing-options (pane :ink +cyan+)
+    (with-text-face (pane :bold)
+      (format pane "  ~A~%" (obj-display-title conv))))
+  (with-drawing-options (pane :ink +white+)
+    (format pane "  JID:     ~A~%" (conv-jid conv))
+    (format pane "  Type:    ~A~%" (conv-type conv))
+    (when (conv-last-activity conv)
+      (format pane "  Last:    ~A~%" (conv-last-activity conv)))
+    (format pane "  Unread:  ~D~%" (conv-unread-count conv)))
+  (terpri pane)
+  ;; Show recent messages in detail pane
+  (let ((msgs (load-messages (conv-id conv) 20)))
+    (when msgs
+      (with-drawing-options (pane :ink +white+)
+        (with-text-face (pane :bold)
+          (format pane "  Recent messages:~%")))
+      (terpri pane)
+      (dolist (msg (nreverse msgs))
+        (let ((nick (or (xmsg-sender-nick msg) "???"))
+              (body (xmsg-body msg))
+              (ts   (xmsg-created-at msg)))
+          (with-drawing-options (pane :ink (if (equal nick "me") +green+ +cyan+))
+            (format pane "  <~A> ~A" nick body))
+          (when ts
+            (with-drawing-options (pane :ink +white+)
+              (format pane "  ~A" (subseq ts 11 16))))
+          (terpri pane))))))
+
+(defmethod display-object-detail (pane (fi feed-item))
+  (terpri pane)
+  (with-drawing-options (pane :ink +cyan+)
+    (with-text-face (pane :bold)
+      (format pane "  ~A~%" (obj-display-title fi))))
+  (with-drawing-options (pane :ink +white+)
+    (when (fi-author fi)
+      (format pane "  Author:    ~A~%" (fi-author fi)))
+    (when (fi-published-at fi)
+      (format pane "  Published: ~A~%" (fi-published-at fi)))
+    (when (fi-url fi)
+      (format pane "  URL:       ~A~%" (fi-url fi)))
+    (format pane "  Read:      ~A~%" (if (= (fi-read fi) 1) "yes" "no"))
+    (when (= (fi-starred fi) 1)
+      (format pane "  Starred:   yes~%")))
+  (terpri pane)
+  (let ((content (or (fi-content fi) (fi-summary fi) "")))
+    (when (> (length content) 0)
+      (with-drawing-options (pane :ink +white+)
+        (format pane "  ~A~%" content)))))
+
+(defmethod display-object-detail (pane (f feed))
+  (terpri pane)
+  (with-drawing-options (pane :ink +green+)
+    (with-text-face (pane :bold)
+      (format pane "  ~A~%" (obj-display-title f))))
+  (with-drawing-options (pane :ink +white+)
+    (format pane "  URL:       ~A~%" (feed-url f))
+    (when (feed-site-url f)
+      (format pane "  Site:      ~A~%" (feed-site-url f)))
+    (format pane "  Type:      ~A~%" (feed-feed-type f))
+    (format pane "  Unread:    ~D~%" (feed-unread-count f))
+    (when (feed-last-fetched f)
+      (format pane "  Fetched:   ~A~%" (feed-last-fetched f)))
+    (when (and (feed-last-error f) (> (length (feed-last-error f)) 0))
+      (with-drawing-options (pane :ink +red+)
+        (format pane "  Error:     ~A~%" (feed-last-error f))))
+    (when (feed-description f)
+      (terpri pane)
+      (format pane "  ~A~%" (feed-description f)))))
 
 (defun display-links (pane object)
   "Display linked objects for OBJECT."

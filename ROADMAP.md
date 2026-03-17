@@ -242,26 +242,34 @@ Each object displayed in the navigation or detail pane is wrapped in
 
 ---
 
-## Phase 3: Communication Integration (v0.4)
+## Phase 3: Communication Integration (v0.4) ✅
 
 **Goal:** Bring messages and feeds into Astrolabe.
 
 ### Deliverables
 
-- [ ] **XMPP integration** — Leverage CLabber for XMPP messaging
-  - Conversation list in navigation pane
-  - Message thread in detail pane
-  - Link conversations to projects/persons
-  - `Message [person]` command
-- [ ] **RSS/Atom feeds** — Subscribe and read feeds
-  - Feed list with unread counts
-  - Article view in detail pane
-  - Capture article as snippet or note
-  - `Subscribe [url]` command
-- [ ] **Notification system** — Unified notification area
-  - New messages, feed items, overdue tasks
-  - Notification count on home screen
-  - `Show Notifications` command
+- [x] **XMPP integration** — Conversation and message model with full CRUD
+  - Conversation list view (`Show Conversations`) with unread counts
+  - Message thread view with color-coded sender nicks and timestamps
+  - Conversations linked to persons/projects via `person_id`/`project_id`
+  - `Message [jid] [body]` command — send message, auto-create conversation
+  - `Show Conversation [conv]` — view message thread
+  - Click-to-navigate presentation translators
+- [x] **RSS/Atom feeds** — Subscribe, fetch, and read feeds
+  - Feed subscription list (`Show Feeds`) with unread counts
+  - Article list and detail views with author, date, content
+  - RSS and Atom parsing via drakma + plump (lightweight XML parser)
+  - `Subscribe [url]` / `Unsubscribe [feed]` commands
+  - `Fetch Feed [feed]` / `Fetch All Feeds` — download and parse feeds
+  - `Capture Article [item]` — save article as a note
+  - `Show Feed [feed]` / `Show Feed Item [item]` commands
+- [x] **Notification system** — Unified notification queue
+  - Notifications for messages, feed updates, subscriptions
+  - Notification count in status bar and home screen summary
+  - `Show Notifications` / `Dismiss Notification` / `Dismiss All Notifications`
+  - Click-to-dismiss presentation translator
+- [x] **Database schema v2** — Migration adds conversations, messages, feeds, feed_items, notifications tables with indexes and FTS
+- [x] **Home screen integration** — Notifications, conversations, and feeds sections on home view
 
 ---
 

@@ -548,11 +548,13 @@
 (defun load-object-by-type-and-id (type-name id)
   "Load an object given its type name string and database ID."
   (cond
-    ((string-equal type-name "note")    (load-note id))
-    ((string-equal type-name "task")    (load-task id))
-    ((string-equal type-name "project") (load-project id))
-    ((string-equal type-name "person")  (load-person id))
-    ((string-equal type-name "snippet") (load-snippet id))
+    ((string-equal type-name "note")         (load-note id))
+    ((string-equal type-name "task")         (load-task id))
+    ((string-equal type-name "project")      (load-project id))
+    ((string-equal type-name "person")       (load-person id))
+    ((string-equal type-name "snippet")      (load-snippet id))
+    ((string-equal type-name "conversation") (load-conversation id))
+    ((string-equal type-name "feed")         (load-feed id))
     (t nil)))
 
 ;;; ─────────────────────────────────────────────────────────────────────
@@ -781,3 +783,329 @@
   "Load recent activity log entries as raw rows."
   (db-query "SELECT id, action, object_type, object_id, detail, created_at
              FROM activity_log ORDER BY created_at DESC LIMIT ?" limit))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Conversation (XMPP)
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defclass conversation ()
+  ((id            :initarg :id            :accessor conv-id            :initform nil)
+   (jid           :initarg :jid           :accessor conv-jid           :initform "")
+   (display-name  :initarg :display-name  :accessor conv-display-name  :initform nil)
+   (conv-type     :initarg :conv-type     :accessor conv-type          :initform "dm")
+   (person-id     :initarg :person-id     :accessor conv-person-id     :initform nil)
+   (project-id    :initarg :project-id    :accessor conv-project-id    :initform nil)
+   (unread-count  :initarg :unread-count  :accessor conv-unread-count  :initform 0)
+   (pinned        :initarg :pinned        :accessor conv-pinned        :initform 0)
+   (last-activity :initarg :last-activity :accessor conv-last-activity :initform nil)
+   (created-at    :initarg :created-at    :accessor conv-created-at    :initform nil)
+   (deleted-at    :initarg :deleted-at    :accessor conv-deleted-at    :initform nil)))
+
+(defmethod obj-type-name ((obj conversation)) "conversation")
+(defmethod obj-display-title ((obj conversation))
+  (or (conv-display-name obj) (conv-jid obj)))
+
+(defparameter *conv-cols*
+  "id, jid, display_name, type, person_id, project_id, unread_count, pinned, last_activity, created_at, deleted_at")
+
+(defun make-conv-from-row (row)
+  (make-instance 'conversation
+                 :id (nth 0 row) :jid (nth 1 row)
+                 :display-name (nth 2 row) :conv-type (nth 3 row)
+                 :person-id (nth 4 row) :project-id (nth 5 row)
+                 :unread-count (or (nth 6 row) 0) :pinned (or (nth 7 row) 0)
+                 :last-activity (nth 8 row)
+                 :created-at (nth 9 row) :deleted-at (nth 10 row)))
+
+(defun save-conversation (conv)
+  (if (conv-id conv)
+      (progn
+        (db-execute "UPDATE conversations SET jid=?, display_name=?, type=?,
+                     person_id=?, project_id=?, unread_count=?, pinned=?, last_activity=?
+                     WHERE id=?"
+                    (conv-jid conv) (conv-display-name conv) (conv-type conv)
+                    (conv-person-id conv) (conv-project-id conv)
+                    (conv-unread-count conv) (conv-pinned conv) (conv-last-activity conv)
+                    (conv-id conv))
+        conv)
+      (progn
+        (db-execute "INSERT INTO conversations (jid, display_name, type, person_id, project_id)
+                     VALUES (?,?,?,?,?)"
+                    (conv-jid conv) (conv-display-name conv) (conv-type conv)
+                    (conv-person-id conv) (conv-project-id conv))
+        (setf (conv-id conv) (db-last-insert-id))
+        conv)))
+
+(defun load-conversation (id)
+  (let ((row (db-query-single
+              (format nil "SELECT ~A FROM conversations WHERE id=? AND deleted_at IS NULL" *conv-cols*) id)))
+    (when row (make-conv-from-row row))))
+
+(defun load-conversation-by-jid (jid)
+  (let ((row (db-query-single
+              (format nil "SELECT ~A FROM conversations WHERE jid=? AND deleted_at IS NULL" *conv-cols*) jid)))
+    (when row (make-conv-from-row row))))
+
+(defun load-conversations (&optional (limit 50))
+  "Load active conversations, pinned first, then by last activity."
+  (mapcar #'make-conv-from-row
+          (db-query (format nil "SELECT ~A FROM conversations WHERE deleted_at IS NULL
+                     ORDER BY pinned DESC, last_activity DESC NULLS LAST LIMIT ?" *conv-cols*) limit)))
+
+(defun delete-conversation (conv)
+  (when (conv-id conv)
+    (db-execute "UPDATE conversations SET deleted_at=datetime('now') WHERE id=?" (conv-id conv))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Message (XMPP)
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defclass xmpp-message ()
+  ((id              :initarg :id              :accessor xmsg-id              :initform nil)
+   (conversation-id :initarg :conversation-id :accessor xmsg-conversation-id :initform nil)
+   (sender-jid      :initarg :sender-jid      :accessor xmsg-sender-jid      :initform nil)
+   (sender-nick     :initarg :sender-nick     :accessor xmsg-sender-nick     :initform nil)
+   (body            :initarg :body            :accessor xmsg-body            :initform "")
+   (stanza-id       :initarg :stanza-id       :accessor xmsg-stanza-id       :initform nil)
+   (level           :initarg :level           :accessor xmsg-level           :initform nil)
+   (encrypted       :initarg :encrypted       :accessor xmsg-encrypted       :initform 0)
+   (edited          :initarg :edited          :accessor xmsg-edited          :initform 0)
+   (created-at      :initarg :created-at      :accessor xmsg-created-at      :initform nil)))
+
+(defparameter *xmsg-cols*
+  "id, conversation_id, sender_jid, sender_nick, body, stanza_id, level, encrypted, edited, created_at")
+
+(defun make-xmsg-from-row (row)
+  (make-instance 'xmpp-message
+                 :id (nth 0 row) :conversation-id (nth 1 row)
+                 :sender-jid (nth 2 row) :sender-nick (nth 3 row)
+                 :body (nth 4 row) :stanza-id (nth 5 row)
+                 :level (nth 6 row) :encrypted (or (nth 7 row) 0)
+                 :edited (or (nth 8 row) 0) :created-at (nth 9 row)))
+
+(defun save-xmpp-message (msg)
+  (if (xmsg-id msg)
+      msg
+      (progn
+        (db-execute "INSERT INTO messages (conversation_id, sender_jid, sender_nick, body, stanza_id, level, encrypted)
+                     VALUES (?,?,?,?,?,?,?)"
+                    (xmsg-conversation-id msg) (xmsg-sender-jid msg) (xmsg-sender-nick msg)
+                    (xmsg-body msg) (xmsg-stanza-id msg) (xmsg-level msg) (xmsg-encrypted msg))
+        (setf (xmsg-id msg) (db-last-insert-id))
+        ;; Update conversation last_activity
+        (db-execute "UPDATE conversations SET last_activity=datetime('now'),
+                     unread_count = unread_count + 1 WHERE id=?"
+                    (xmsg-conversation-id msg))
+        msg)))
+
+(defun load-messages (conversation-id &optional (limit 100))
+  "Load messages for a conversation, most recent first."
+  (mapcar #'make-xmsg-from-row
+          (db-query (format nil "SELECT ~A FROM messages WHERE conversation_id=?
+                     ORDER BY created_at DESC LIMIT ?" *xmsg-cols*)
+                    conversation-id limit)))
+
+(defun mark-conversation-read (conv)
+  "Reset unread count for a conversation."
+  (when (conv-id conv)
+    (db-execute "UPDATE conversations SET unread_count=0 WHERE id=?" (conv-id conv))
+    (setf (conv-unread-count conv) 0)))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Feed (RSS/Atom)
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defclass feed ()
+  ((id             :initarg :id             :accessor feed-id             :initform nil)
+   (url            :initarg :url            :accessor feed-url            :initform "")
+   (title          :initarg :title          :accessor feed-title          :initform nil)
+   (description    :initarg :description    :accessor feed-description    :initform "")
+   (site-url       :initarg :site-url       :accessor feed-site-url       :initform nil)
+   (feed-type      :initarg :feed-type      :accessor feed-feed-type      :initform "rss")
+   (last-fetched   :initarg :last-fetched   :accessor feed-last-fetched   :initform nil)
+   (fetch-interval :initarg :fetch-interval :accessor feed-fetch-interval :initform 3600)
+   (unread-count   :initarg :unread-count   :accessor feed-unread-count   :initform 0)
+   (error-count    :initarg :error-count    :accessor feed-error-count    :initform 0)
+   (last-error     :initarg :last-error     :accessor feed-last-error     :initform nil)
+   (pinned         :initarg :pinned         :accessor feed-pinned         :initform 0)
+   (created-at     :initarg :created-at     :accessor feed-created-at     :initform nil)
+   (deleted-at     :initarg :deleted-at     :accessor feed-deleted-at     :initform nil)))
+
+(defmethod obj-type-name ((obj feed)) "feed")
+(defmethod obj-display-title ((obj feed))
+  (or (feed-title obj) (feed-url obj)))
+
+(defparameter *feed-cols*
+  "id, url, title, description, site_url, feed_type, last_fetched, fetch_interval, unread_count, error_count, last_error, pinned, created_at, deleted_at")
+
+(defun make-feed-from-row (row)
+  (make-instance 'feed
+                 :id (nth 0 row) :url (nth 1 row) :title (nth 2 row)
+                 :description (nth 3 row) :site-url (nth 4 row) :feed-type (nth 5 row)
+                 :last-fetched (nth 6 row) :fetch-interval (or (nth 7 row) 3600)
+                 :unread-count (or (nth 8 row) 0) :error-count (or (nth 9 row) 0)
+                 :last-error (nth 10 row) :pinned (or (nth 11 row) 0)
+                 :created-at (nth 12 row) :deleted-at (nth 13 row)))
+
+(defun save-feed (f)
+  (if (feed-id f)
+      (progn
+        (db-execute "UPDATE feeds SET url=?, title=?, description=?, site_url=?, feed_type=?,
+                     last_fetched=?, fetch_interval=?, unread_count=?, error_count=?, last_error=?, pinned=?
+                     WHERE id=?"
+                    (feed-url f) (feed-title f) (feed-description f) (feed-site-url f)
+                    (feed-feed-type f) (feed-last-fetched f) (feed-fetch-interval f)
+                    (feed-unread-count f) (feed-error-count f) (feed-last-error f)
+                    (feed-pinned f) (feed-id f))
+        f)
+      (progn
+        (db-execute "INSERT INTO feeds (url, title, description, site_url, feed_type) VALUES (?,?,?,?,?)"
+                    (feed-url f) (feed-title f) (feed-description f) (feed-site-url f) (feed-feed-type f))
+        (setf (feed-id f) (db-last-insert-id))
+        f)))
+
+(defun load-feed (id)
+  (let ((row (db-query-single
+              (format nil "SELECT ~A FROM feeds WHERE id=? AND deleted_at IS NULL" *feed-cols*) id)))
+    (when row (make-feed-from-row row))))
+
+(defun load-feeds (&optional (limit 50))
+  "Load active feed subscriptions."
+  (mapcar #'make-feed-from-row
+          (db-query (format nil "SELECT ~A FROM feeds WHERE deleted_at IS NULL
+                     ORDER BY pinned DESC, title ASC LIMIT ?" *feed-cols*) limit)))
+
+(defun delete-feed (f)
+  (when (feed-id f)
+    (db-execute "UPDATE feeds SET deleted_at=datetime('now') WHERE id=?" (feed-id f))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Feed Item
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defclass feed-item ()
+  ((id           :initarg :id           :accessor fi-id           :initform nil)
+   (feed-id      :initarg :feed-id      :accessor fi-feed-id      :initform nil)
+   (title        :initarg :title        :accessor fi-title        :initform nil)
+   (url          :initarg :url          :accessor fi-url          :initform nil)
+   (author       :initarg :author       :accessor fi-author       :initform nil)
+   (summary      :initarg :summary      :accessor fi-summary      :initform "")
+   (content      :initarg :content      :accessor fi-content      :initform "")
+   (published-at :initarg :published-at :accessor fi-published-at :initform nil)
+   (guid         :initarg :guid         :accessor fi-guid         :initform nil)
+   (item-read    :initarg :item-read    :accessor fi-read         :initform 0)
+   (starred      :initarg :starred      :accessor fi-starred      :initform 0)
+   (created-at   :initarg :created-at   :accessor fi-created-at   :initform nil)))
+
+(defmethod obj-type-name ((obj feed-item)) "feed_item")
+(defmethod obj-display-title ((obj feed-item))
+  (or (fi-title obj) "(untitled)"))
+
+(defparameter *fi-cols*
+  "id, feed_id, title, url, author, summary, content, published_at, guid, read, starred, created_at")
+
+(defun make-fi-from-row (row)
+  (make-instance 'feed-item
+                 :id (nth 0 row) :feed-id (nth 1 row) :title (nth 2 row)
+                 :url (nth 3 row) :author (nth 4 row) :summary (nth 5 row)
+                 :content (nth 6 row) :published-at (nth 7 row) :guid (nth 8 row)
+                 :item-read (or (nth 9 row) 0) :starred (or (nth 10 row) 0)
+                 :created-at (nth 11 row)))
+
+(defun save-feed-item (fi)
+  (if (fi-id fi)
+      (progn
+        (db-execute "UPDATE feed_items SET title=?, url=?, author=?, summary=?, content=?,
+                     published_at=?, guid=?, read=?, starred=? WHERE id=?"
+                    (fi-title fi) (fi-url fi) (fi-author fi) (fi-summary fi) (fi-content fi)
+                    (fi-published-at fi) (fi-guid fi) (fi-read fi) (fi-starred fi) (fi-id fi))
+        fi)
+      (progn
+        (db-execute "INSERT OR IGNORE INTO feed_items (feed_id, title, url, author, summary, content, published_at, guid)
+                     VALUES (?,?,?,?,?,?,?,?)"
+                    (fi-feed-id fi) (fi-title fi) (fi-url fi) (fi-author fi)
+                    (fi-summary fi) (fi-content fi) (fi-published-at fi) (fi-guid fi))
+        (setf (fi-id fi) (db-last-insert-id))
+        fi)))
+
+(defun load-feed-items (feed-id &key (limit 50) unread-only)
+  "Load items for a feed."
+  (mapcar #'make-fi-from-row
+          (db-query (format nil "SELECT ~A FROM feed_items WHERE feed_id=?~A
+                     ORDER BY published_at DESC NULLS LAST, created_at DESC LIMIT ?"
+                           *fi-cols*
+                           (if unread-only " AND read=0" ""))
+                    feed-id limit)))
+
+(defun load-unread-feed-items (&optional (limit 50))
+  "Load all unread items across all feeds."
+  (mapcar #'make-fi-from-row
+          (db-query (format nil "SELECT ~A FROM feed_items WHERE read=0
+                     ORDER BY published_at DESC NULLS LAST, created_at DESC LIMIT ?" *fi-cols*)
+                    limit)))
+
+(defun mark-feed-item-read (fi)
+  (when (fi-id fi)
+    (db-execute "UPDATE feed_items SET read=1 WHERE id=?" (fi-id fi))
+    (setf (fi-read fi) 1)
+    ;; Decrement feed unread count
+    (db-execute "UPDATE feeds SET unread_count = MAX(0, unread_count - 1) WHERE id=?" (fi-feed-id fi))))
+
+(defun star-feed-item (fi)
+  (when (fi-id fi)
+    (db-execute "UPDATE feed_items SET starred=1 WHERE id=?" (fi-id fi))
+    (setf (fi-starred fi) 1)))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Notifications
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defclass notification ()
+  ((id          :initarg :id          :accessor notif-id          :initform nil)
+   (notif-type  :initarg :notif-type  :accessor notif-type        :initform "system")
+   (title       :initarg :title       :accessor notif-title       :initform "")
+   (body        :initarg :body        :accessor notif-body        :initform "")
+   (object-type :initarg :object-type :accessor notif-object-type :initform nil)
+   (object-id   :initarg :object-id   :accessor notif-object-id   :initform nil)
+   (notif-read  :initarg :notif-read  :accessor notif-read        :initform 0)
+   (created-at  :initarg :created-at  :accessor notif-created-at  :initform nil)))
+
+(defparameter *notif-cols*
+  "id, type, title, body, object_type, object_id, read, created_at")
+
+(defun make-notif-from-row (row)
+  (make-instance 'notification
+                 :id (nth 0 row) :notif-type (nth 1 row) :title (nth 2 row)
+                 :body (nth 3 row) :object-type (nth 4 row) :object-id (nth 5 row)
+                 :notif-read (or (nth 6 row) 0) :created-at (nth 7 row)))
+
+(defun create-notification (type title &key body object-type object-id)
+  "Create a new notification."
+  (db-execute "INSERT INTO notifications (type, title, body, object_type, object_id) VALUES (?,?,?,?,?)"
+              type title (or body "") object-type object-id)
+  (make-instance 'notification
+                 :id (db-last-insert-id) :notif-type type :title title
+                 :body (or body "") :object-type object-type :object-id object-id))
+
+(defun load-notifications (&key (limit 50) unread-only)
+  "Load notifications."
+  (mapcar #'make-notif-from-row
+          (db-query (format nil "SELECT ~A FROM notifications~A
+                     ORDER BY created_at DESC LIMIT ?"
+                           *notif-cols*
+                           (if unread-only " WHERE read=0" ""))
+                    limit)))
+
+(defun unread-notification-count ()
+  "Return count of unread notifications."
+  (let ((row (db-query-single "SELECT COUNT(*) FROM notifications WHERE read=0")))
+    (if row (first row) 0)))
+
+(defun mark-notification-read (notif)
+  (when (notif-id notif)
+    (db-execute "UPDATE notifications SET read=1 WHERE id=?" (notif-id notif))
+    (setf (notif-read notif) 1)))
+
+(defun mark-all-notifications-read ()
+  "Dismiss all notifications."
+  (db-execute "UPDATE notifications SET read=1 WHERE read=0"))
