@@ -28,36 +28,77 @@
 (defvar *task-filter* nil)
 (defvar *task-filter-results* nil)
 
+;;; Navigation history stacks for back/forward.
+(defvar *nav-history* nil)
+(defvar *nav-forward* nil)
+
+(defun current-nav-state ()
+  "Capture the current navigation state as a plist."
+  (list :view *current-view*
+        :object *current-object*
+        :project *current-project*))
+
+(defun restore-nav-state (state)
+  "Restore navigation state from a plist."
+  (setf *current-view* (getf state :view))
+  (setf *current-object* (getf state :object))
+  (setf *current-project* (getf state :project)))
+
+(defun push-nav-state ()
+  "Push current state onto history before navigating."
+  (push (current-nav-state) *nav-history*)
+  (setf *nav-forward* nil))
+
 ;;; ─────────────────────────────────────────────────────────────────────
 ;;; Show commands — display objects in the detail pane
 ;;; ─────────────────────────────────────────────────────────────────────
 
 (define-astrolabe-command (com-show-note :name t :menu t)
     ((note 'note-presentation :prompt "note"))
+  (push-nav-state)
   (setf *current-object* note))
 
 (define-astrolabe-command (com-show-task :name t :menu t)
     ((task 'task-presentation :prompt "task"))
+  (push-nav-state)
   (setf *current-object* task))
 
 (define-astrolabe-command (com-show-project :name t :menu t)
     ((project 'project-presentation :prompt "project"))
+  (push-nav-state)
   (setf *current-view* :project)
   (setf *current-project* project)
   (setf *current-object* project))
 
 (define-astrolabe-command (com-show-person :name t :menu t)
     ((person 'person-presentation :prompt "person"))
+  (push-nav-state)
   (setf *current-object* person))
 
 (define-astrolabe-command (com-show-snippet :name t :menu t)
     ((snippet 'snippet-presentation :prompt "snippet"))
+  (push-nav-state)
   (setf *current-object* snippet))
 
 (define-astrolabe-command (com-home :name t :menu t) ()
+  (push-nav-state)
   (setf *current-view* :home)
   (setf *current-object* nil)
   (setf *current-project* nil))
+
+(define-astrolabe-command (com-back :name t :menu t) ()
+  (if *nav-history*
+      (let ((prev (pop *nav-history*)))
+        (push (current-nav-state) *nav-forward*)
+        (restore-nav-state prev))
+      (format t "~&No history.~%")))
+
+(define-astrolabe-command (com-forward :name t :menu t) ()
+  (if *nav-forward*
+      (let ((next (pop *nav-forward*)))
+        (push (current-nav-state) *nav-history*)
+        (restore-nav-state next))
+      (format t "~&No forward history.~%")))
 
 ;;; ─────────────────────────────────────────────────────────────────────
 ;;; Create commands
@@ -127,36 +168,51 @@
 
 (define-astrolabe-command (com-delete-note :name t :menu t)
     ((note 'note-presentation :prompt "note"))
-  (delete-note note)
-  (when (eq *current-object* note) (setf *current-object* nil))
-  (format t "~&Deleted note: ~A~%" (note-title note)))
+  (format t "~&Delete note '~A'? " (note-title note))
+  (let ((confirm (accept 'string :prompt "yes/no" :default "no")))
+    (when (string-equal confirm "yes")
+      (delete-note note)
+      (when (eq *current-object* note) (setf *current-object* nil))
+      (format t "~&Deleted note: ~A~%" (note-title note)))))
 
 (define-astrolabe-command (com-delete-task :name t :menu t)
     ((task 'task-presentation :prompt "task"))
-  (delete-task task)
-  (when (eq *current-object* task) (setf *current-object* nil))
-  (format t "~&Deleted task: ~A~%" (task-title task)))
+  (format t "~&Delete task '~A'? " (task-title task))
+  (let ((confirm (accept 'string :prompt "yes/no" :default "no")))
+    (when (string-equal confirm "yes")
+      (delete-task task)
+      (when (eq *current-object* task) (setf *current-object* nil))
+      (format t "~&Deleted task: ~A~%" (task-title task)))))
 
 (define-astrolabe-command (com-delete-project :name t :menu t)
     ((project 'project-presentation :prompt "project"))
-  (delete-project project)
-  (when (eq *current-object* project)
-    (setf *current-object* nil)
-    (setf *current-view* :home)
-    (setf *current-project* nil))
-  (format t "~&Deleted project: ~A~%" (project-name project)))
+  (format t "~&Delete project '~A'? " (project-name project))
+  (let ((confirm (accept 'string :prompt "yes/no" :default "no")))
+    (when (string-equal confirm "yes")
+      (delete-project project)
+      (when (eq *current-object* project)
+        (setf *current-object* nil)
+        (setf *current-view* :home)
+        (setf *current-project* nil))
+      (format t "~&Deleted project: ~A~%" (project-name project)))))
 
 (define-astrolabe-command (com-delete-person :name t :menu t)
     ((person 'person-presentation :prompt "person"))
-  (delete-person person)
-  (when (eq *current-object* person) (setf *current-object* nil))
-  (format t "~&Deleted person: ~A~%" (person-name person)))
+  (format t "~&Delete person '~A'? " (person-name person))
+  (let ((confirm (accept 'string :prompt "yes/no" :default "no")))
+    (when (string-equal confirm "yes")
+      (delete-person person)
+      (when (eq *current-object* person) (setf *current-object* nil))
+      (format t "~&Deleted person: ~A~%" (person-name person)))))
 
 (define-astrolabe-command (com-delete-snippet :name t :menu t)
     ((snippet 'snippet-presentation :prompt "snippet"))
-  (delete-snippet snippet)
-  (when (eq *current-object* snippet) (setf *current-object* nil))
-  (format t "~&Deleted snippet: ~A~%" (obj-display-title snippet)))
+  (format t "~&Delete snippet '~A'? " (obj-display-title snippet))
+  (let ((confirm (accept 'string :prompt "yes/no" :default "no")))
+    (when (string-equal confirm "yes")
+      (delete-snippet snippet)
+      (when (eq *current-object* snippet) (setf *current-object* nil))
+      (format t "~&Deleted snippet: ~A~%" (obj-display-title snippet)))))
 
 ;;; ─────────────────────────────────────────────────────────────────────
 ;;; Search
@@ -227,6 +283,73 @@
     (format t "~&~D tasks due today or overdue~%" (length tasks))))
 
 ;;; ─────────────────────────────────────────────────────────────────────
+;;; Fuzzy finder
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defvar *go-results* nil)
+
+(define-astrolabe-command (com-go :name t :menu t)
+    ((partial 'string :prompt "Jump to"))
+  (let ((results (fuzzy-find partial)))
+    (cond
+      ((null results)
+       (format t "~&No matches for '~A'~%" partial))
+      ((= (length results) 1)
+       (push-nav-state)
+       (let ((obj (first results)))
+         (setf *current-object* obj)
+         (when (typep obj 'project)
+           (setf *current-view* :project)
+           (setf *current-project* obj))))
+      (t
+       (setf *go-results* results)
+       (setf *current-view* :go-results)
+       (setf *current-object* nil)
+       (format t "~&~D matches for '~A'~%" (length results) partial)))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Agenda view
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defvar *agenda-overdue* nil)
+(defvar *agenda-today* nil)
+(defvar *agenda-upcoming* nil)
+(defvar *agenda-recent* nil)
+
+(define-astrolabe-command (com-agenda :name t :menu t) ()
+  (push-nav-state)
+  (setf *agenda-overdue* (load-overdue-tasks))
+  (let* ((today-str (subseq (local-time:format-timestring nil (local-time:now)
+                              :format '((:year 4) #\- (:month 2) #\- (:day 2)))
+                            0 10))
+         (today-tasks (mapcar #'make-task-from-row
+                              (db-query (format nil "SELECT ~A FROM tasks
+                                         WHERE deleted_at IS NULL
+                                           AND status IN ('todo','active','waiting')
+                                           AND due_date = ?
+                                         ORDER BY priority ASC" *task-cols*)
+                                        today-str))))
+    (setf *agenda-today* today-tasks))
+  (setf *agenda-upcoming* (load-upcoming-tasks 7))
+  (setf *agenda-recent* (load-recent-captures))
+  (setf *current-view* :agenda)
+  (setf *current-object* nil))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Bookmarks
+;;; ─────────────────────────────────────────────────────────────────────
+
+(define-astrolabe-command (com-bookmark :name t :menu t)
+    ((object 'astrolabe-obj :prompt "object"))
+  (bookmark-object object)
+  (format t "~&Bookmarked: ~A~%" (obj-display-title object)))
+
+(define-astrolabe-command (com-unbookmark :name t :menu t)
+    ((object 'astrolabe-obj :prompt "object"))
+  (unbookmark-object object)
+  (format t "~&Removed bookmark: ~A~%" (obj-display-title object)))
+
+;;; ─────────────────────────────────────────────────────────────────────
 ;;; Note editing
 ;;; ─────────────────────────────────────────────────────────────────────
 
@@ -274,4 +397,20 @@
 
 (add-keystroke-to-command-table
  'astrolabe '(:h :control) :command '(com-home)
+ :errorp nil)
+
+(add-keystroke-to-command-table
+ 'astrolabe '(:b :control) :command '(com-back)
+ :errorp nil)
+
+(add-keystroke-to-command-table
+ 'astrolabe '(:f :control) :command '(com-forward)
+ :errorp nil)
+
+(add-keystroke-to-command-table
+ 'astrolabe '(:a :control) :command '(com-agenda)
+ :errorp nil)
+
+(add-keystroke-to-command-table
+ 'astrolabe '(:g :control) :command '(com-go)
  :errorp nil)

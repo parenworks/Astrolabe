@@ -213,33 +213,32 @@ Each object displayed in the navigation or detail pane is wrapped in
 
 ### Deliverables
 
-- [ ] **Breadcrumb navigation** — Track navigation history, go back/forward
-  - `Back` command (and keybinding)
+- [x] **Breadcrumb navigation** — Track navigation history, go back/forward
+  - `Back` command (`C-b`), `Forward` command (`C-f`)
   - Breadcrumb trail displayed at top of navigation pane
-- [ ] **Fuzzy finder** — Quick jump to any object by typing partial name
-  - `Go [partial-name]` command with completion
-  - Matches across all object types
-- [ ] **Agenda view** — Daily planning view
+- [x] **Fuzzy finder** — Quick jump to any object by typing partial name
+  - `Go [partial-name]` command (`C-g`) with LIKE matching across all types
+  - Single match jumps directly; multiple matches shown in nav pane
+- [x] **Agenda view** — Daily planning view (`C-a`)
   - Today's tasks sorted by priority
-  - Overdue tasks highlighted
+  - Overdue tasks highlighted in red
   - Upcoming tasks (next 7 days)
   - Recent captures (last 24h)
-- [ ] **Bookmarks** — Pin frequently accessed objects
-  - `Bookmark [object]` command
+- [x] **Bookmarks** — Pin frequently accessed objects
+  - `Bookmark [object]` / `Unbookmark [object]` commands
   - Bookmarks section on home screen
-- [ ] **Status bar** — Persistent info line showing:
+- [x] **Status bar** — Persistent info line showing:
   - Current view/context
   - Open task count
   - Current time
-  - Database size
-- [ ] **Color theme** — Consistent color scheme
-  - Object type colors (notes=cyan, tasks=yellow, projects=green, persons=magenta)
-  - Priority colors
-  - Status colors (active=green, paused=yellow, done=dim)
-- [ ] **Keyboard shortcuts** — Single-key actions in navigation views
-  - `n` = new note, `t` = new task, `/` = search, `q` = quit
-  - Arrow keys / j/k for list navigation
-- [ ] **Confirmation dialogs** — Confirm before destructive actions
+- [x] **Color theme** — Consistent color scheme
+  - Object type colors (notes=cyan, tasks=priority, projects=green, persons=magenta)
+  - Priority colors (A=red, B=yellow, C/default=white)
+  - Status markers (todo=[ ], active=[~], done=[x], cancelled=[-])
+- [x] **Keyboard shortcuts** — Control-key accelerators
+  - `C-n` note, `C-t` task, `C-s` search, `C-h` home
+  - `C-b` back, `C-f` forward, `C-a` agenda, `C-g` go
+- [x] **Confirmation dialogs** — Confirm before destructive actions (yes/no prompt on all deletes)
 
 ---
 

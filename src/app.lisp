@@ -17,6 +17,11 @@
    (detail-pane :application
                 :display-function 'display-detail
                 :scroll-bars nil)
+   (status-pane :application
+                :display-function 'display-status-bar
+                :scroll-bars nil
+                :max-height 1
+                :min-height 1)
    (interactor :interactor
                :scroll-bars nil))
   (:layouts
@@ -25,5 +30,6 @@
       (5/6 (horizontally ()
              (1/3 nav-pane)
              (2/3 detail-pane)))
+      status-pane
       (1/6 interactor))))
   (:top-level (clim-charmed:charmed-frame-top-level)))

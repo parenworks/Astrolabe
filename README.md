@@ -61,7 +61,7 @@ All persistent data is stored in a single SQLite database file (`~/.astrolabe/as
 
 Astrolabe's core data model is built around **objects** and **links**:
 
-```
+```text
 ┌──────────┐     ┌──────────┐     ┌──────────┐
 │  Project  │────▶│   Task   │────▶│   Note   │
 └──────────┘     └──────────┘     └──────────┘
@@ -103,7 +103,7 @@ CREATE TABLE links (
 
 Astrolabe uses a three-pane layout:
 
-```
+```text
 ┌─────────────────────┃─────────────────────────────┐
 │                     ┃                              │
 │   Navigation Pane   ┃      Detail Pane             │
@@ -131,7 +131,7 @@ Astrolabe uses a three-pane layout:
 
 All actions are CLIM commands:
 
-```
+```text
 Create:
   Capture Note [title]         — Create a note, auto-link to current context
   Add Task [title]             — Create a task
@@ -146,25 +146,31 @@ Actions:
   Untag [object] [tag]         — Remove a tag
   Edit Note [note] [body]      — Replace note body
   Append Note [note] [text]    — Append to note body
+  Bookmark [object]            — Pin an object to home screen
+  Unbookmark [object]          — Remove pin
 
 Search & Filter:
   Search [query]               — FTS5 search across all objects
+  Go [partial-name]            — Fuzzy jump to any object
   Filter Tag [tag]             — Show all objects with a tag
   Show Tasks                   — All open tasks
   Show Tasks Today             — Tasks due today or overdue
+  Agenda                       — Daily planning view
 
 Delete:
-  Delete Note/Task/Project/Person/Snippet — Soft delete
+  Delete Note/Task/Project/Person/Snippet — Soft delete (with confirmation)
 
 Navigate:
   Home                         — Return to home view
+  Back                         — Go to previous view
+  Forward                      — Go forward in history
   Quit                         — Exit Astrolabe
 
 Keyboard shortcuts:
-  C-n  Capture Note
-  C-t  Add Task
-  C-s  Search
-  C-h  Home
+  C-n  Capture Note    C-b  Back
+  C-t  Add Task        C-f  Forward
+  C-s  Search          C-a  Agenda
+  C-h  Home            C-g  Go (fuzzy find)
 ```
 
 Commands accept presentation arguments — click an object on screen to provide it as an argument to the current command.
@@ -204,7 +210,7 @@ On first run, Astrolabe creates `~/.astrolabe/astrolabe.db` with the initial sch
 
 ## Project Structure
 
-```
+```text
 astrolabe/
 ├── README.md
 ├── ROADMAP.md

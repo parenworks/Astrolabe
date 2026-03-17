@@ -615,6 +615,104 @@
     (nreverse results)))
 
 ;;; ─────────────────────────────────────────────────────────────────────
+;;; Fuzzy find — LIKE-based matching across all object types
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defun fuzzy-find (partial &optional (limit 20))
+  "Find objects whose display name contains PARTIAL (case-insensitive). Returns mixed list."
+  (let ((pattern (concatenate 'string "%" partial "%"))
+        (results nil))
+    (dolist (row (db-query (format nil "SELECT ~A FROM notes WHERE deleted_at IS NULL AND title LIKE ? LIMIT ?"
+                                   *note-cols*) pattern limit))
+      (push (make-note-from-row row) results))
+    (dolist (row (db-query (format nil "SELECT ~A FROM tasks WHERE deleted_at IS NULL AND title LIKE ? LIMIT ?"
+                                   *task-cols*) pattern limit))
+      (push (make-task-from-row row) results))
+    (dolist (row (db-query (format nil "SELECT ~A FROM projects WHERE deleted_at IS NULL AND name LIKE ? LIMIT ?"
+                                   *project-cols*) pattern limit))
+      (push (make-project-from-row row) results))
+    (dolist (row (db-query (format nil "SELECT ~A FROM persons WHERE deleted_at IS NULL AND name LIKE ? LIMIT ?"
+                                   *person-cols*) pattern limit))
+      (push (make-person-from-row row) results))
+    (dolist (row (db-query (format nil "SELECT ~A FROM snippets WHERE deleted_at IS NULL AND title LIKE ? LIMIT ?"
+                                   *snippet-cols*) pattern limit))
+      (push (make-snippet-from-row row) results))
+    (nreverse results)))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Agenda queries
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defun load-overdue-tasks (&optional (limit 50))
+  "Load tasks whose due_date is before today."
+  (let ((today (subseq (local-time:format-timestring nil (local-time:now)
+                         :format '((:year 4) #\- (:month 2) #\- (:day 2)))
+                       0 10)))
+    (mapcar #'make-task-from-row
+            (db-query (format nil "SELECT ~A FROM tasks
+                       WHERE deleted_at IS NULL
+                         AND status IN ('todo','active','waiting')
+                         AND due_date < ?
+                       ORDER BY due_date ASC, priority ASC LIMIT ?" *task-cols*)
+                      today limit))))
+
+(defun load-upcoming-tasks (days &optional (limit 50))
+  "Load tasks due within the next DAYS days."
+  (let* ((now (local-time:now))
+         (today (subseq (local-time:format-timestring nil now
+                          :format '((:year 4) #\- (:month 2) #\- (:day 2)))
+                        0 10))
+         (future (subseq (local-time:format-timestring
+                          nil (local-time:timestamp+ now days :day)
+                          :format '((:year 4) #\- (:month 2) #\- (:day 2)))
+                         0 10)))
+    (mapcar #'make-task-from-row
+            (db-query (format nil "SELECT ~A FROM tasks
+                       WHERE deleted_at IS NULL
+                         AND status IN ('todo','active','waiting')
+                         AND due_date >= ? AND due_date <= ?
+                       ORDER BY due_date ASC, priority ASC LIMIT ?" *task-cols*)
+                      today future limit))))
+
+(defun load-recent-captures (&optional (hours 24) (limit 20))
+  "Load objects created in the last HOURS hours. Returns mixed list."
+  (let ((cutoff (local-time:format-timestring
+                 nil (local-time:timestamp- (local-time:now) hours :hour)
+                 :format '((:year 4) #\- (:month 2) #\- (:day 2) #\Space
+                           (:hour 2) #\: (:min 2) #\: (:sec 2))))
+        (results nil))
+    (dolist (row (db-query (format nil "SELECT ~A FROM notes WHERE deleted_at IS NULL AND created_at >= ? ORDER BY created_at DESC LIMIT ?"
+                                   *note-cols*) cutoff limit))
+      (push (make-note-from-row row) results))
+    (dolist (row (db-query (format nil "SELECT ~A FROM tasks WHERE deleted_at IS NULL AND created_at >= ? ORDER BY created_at DESC LIMIT ?"
+                                   *task-cols*) cutoff limit))
+      (push (make-task-from-row row) results))
+    (dolist (row (db-query (format nil "SELECT ~A FROM snippets WHERE deleted_at IS NULL AND created_at >= ? ORDER BY created_at DESC LIMIT ?"
+                                   *snippet-cols*) cutoff limit))
+      (push (make-snippet-from-row row) results))
+    (nreverse results)))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Bookmark helpers for pinning astrolabe objects
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defun bookmark-object (object)
+  "Create a bookmark pointing to an astrolabe object."
+  (save-bookmark (make-instance 'bookmark
+                                :title (obj-display-title object)
+                                :object-type (obj-type-name object)
+                                :object-id (obj-id object))))
+
+(defun unbookmark-object (object)
+  "Remove bookmark for an astrolabe object."
+  (let ((row (db-query-single
+              (format nil "SELECT ~A FROM bookmarks WHERE object_type=? AND object_id=? AND deleted_at IS NULL"
+                      *bookmark-cols*)
+              (obj-type-name object) (obj-id object))))
+    (when row
+      (delete-bookmark (make-bookmark-from-row row)))))
+
+;;; ─────────────────────────────────────────────────────────────────────
 ;;; Tags
 ;;; ─────────────────────────────────────────────────────────────────────
 

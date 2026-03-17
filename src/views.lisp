@@ -9,12 +9,15 @@
 (defun display-navigation (frame pane)
   "Display function for the navigation pane."
   (declare (ignore frame))
+  (display-breadcrumbs pane)
   (case *current-view*
     (:home       (display-home-nav pane))
     (:project    (display-project-nav pane))
     (:search     (display-search-nav pane))
     (:tag-filter (display-tag-filter-nav pane))
     (:tasks      (display-tasks-nav pane))
+    (:agenda     (display-agenda-nav pane))
+    (:go-results (display-go-results-nav pane))
     (t           (display-home-nav pane))))
 
 (defun display-home-nav (pane)
@@ -81,7 +84,23 @@
         (dolist (snippet snippets)
           (present-snippet pane snippet))
         (with-drawing-options (pane :ink +white+)
-          (format pane "    (no snippets yet)~%")))))
+          (format pane "    (no snippets yet)~%"))))
+  (terpri pane)
+
+  ;; Bookmarks
+  (let ((bookmarks (load-bookmarks 10)))
+    (when bookmarks
+      (with-drawing-options (pane :ink +white+)
+        (with-text-face (pane :bold)
+          (format pane "  Bookmarks~%")))
+      (dolist (bm bookmarks)
+        (let ((obj (when (bookmark-object-type bm)
+                    (load-object-by-type-and-id
+                     (bookmark-object-type bm) (bookmark-object-id bm)))))
+          (if obj
+              (present-object pane obj)
+              (with-drawing-options (pane :ink +white+)
+                (format pane "    ~A~%" (bookmark-title bm)))))))))
 
 (defun display-project-nav (pane)
   "Display a project's contents in the navigation pane."
@@ -122,6 +141,33 @@
                 (present-note pane note))
               (with-drawing-options (pane :ink +white+)
                 (format pane "    (no notes)~%")))))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Breadcrumbs
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defun nav-state-label (state)
+  "Return a short label for a navigation state."
+  (let ((view (getf state :view))
+        (obj  (getf state :object)))
+    (cond
+      (obj  (obj-display-title obj))
+      ((eq view :home) "Home")
+      ((eq view :search) (format nil "Search: ~A" (or *search-query* "")))
+      ((eq view :agenda) "Agenda")
+      ((eq view :tasks) "Tasks")
+      ((eq view :tag-filter) (format nil "Tag: ~A" (or *filter-tag* "")))
+      (t (string-capitalize (symbol-name view))))))
+
+(defun display-breadcrumbs (pane)
+  "Display the navigation breadcrumb trail."
+  (when *nav-history*
+    (with-drawing-options (pane :ink +white+)
+      (format pane "  ")
+      (let ((trail (reverse (subseq *nav-history* 0 (min 5 (length *nav-history*))))))
+        (dolist (state trail)
+          (format pane "~A > " (nav-state-label state))))
+      (format pane "*~%"))))
 
 ;;; ─────────────────────────────────────────────────────────────────────
 ;;; Helper — present any object by type
@@ -187,6 +233,104 @@
         (present-task pane task))
       (with-drawing-options (pane :ink +white+)
         (format pane "    (no tasks)~%"))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Agenda view
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defun display-agenda-nav (pane)
+  "Display the daily agenda view."
+  (with-drawing-options (pane :ink +white+)
+    (with-text-face (pane :bold)
+      (format pane "  AGENDA~%")))
+  (with-drawing-options (pane :ink +white+)
+    (format pane "  ~A~%"
+            (subseq (local-time:format-timestring nil (local-time:now)
+                     :format '((:year 4) #\- (:month 2) #\- (:day 2)))
+                    0 10)))
+  (terpri pane)
+
+  ;; Overdue
+  (when *agenda-overdue*
+    (with-drawing-options (pane :ink +red+)
+      (with-text-face (pane :bold)
+        (format pane "  Overdue~%")))
+    (dolist (task *agenda-overdue*)
+      (present-task pane task))
+    (terpri pane))
+
+  ;; Today
+  (with-drawing-options (pane :ink +yellow+)
+    (with-text-face (pane :bold)
+      (format pane "  Today~%")))
+  (if *agenda-today*
+      (dolist (task *agenda-today*)
+        (present-task pane task))
+      (with-drawing-options (pane :ink +white+)
+        (format pane "    (nothing due today)~%")))
+  (terpri pane)
+
+  ;; Upcoming 7 days
+  (with-drawing-options (pane :ink +green+)
+    (with-text-face (pane :bold)
+      (format pane "  Upcoming (7 days)~%")))
+  (if *agenda-upcoming*
+      (dolist (task *agenda-upcoming*)
+        (present-task pane task))
+      (with-drawing-options (pane :ink +white+)
+        (format pane "    (nothing upcoming)~%")))
+  (terpri pane)
+
+  ;; Recent captures
+  (when *agenda-recent*
+    (with-drawing-options (pane :ink +cyan+)
+      (with-text-face (pane :bold)
+        (format pane "  Recent captures (24h)~%")))
+    (dolist (obj *agenda-recent*)
+      (present-object pane obj))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Go (fuzzy find) results view
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defun display-go-results-nav (pane)
+  "Display fuzzy-find results."
+  (with-drawing-options (pane :ink +white+)
+    (with-text-face (pane :bold)
+      (format pane "  Jump to:~%")))
+  (terpri pane)
+  (if *go-results*
+      (dolist (obj *go-results*)
+        (present-object pane obj))
+      (with-drawing-options (pane :ink +white+)
+        (format pane "    (no matches)~%"))))
+
+;;; ─────────────────────────────────────────────────────────────────────
+;;; Status bar
+;;; ─────────────────────────────────────────────────────────────────────
+
+(defun display-status-bar (frame pane)
+  "Display the persistent status bar."
+  (declare (ignore frame))
+  (with-drawing-options (pane :ink +white+)
+    (let* ((view-label (case *current-view*
+                         (:home "Home")
+                         (:project (if *current-project*
+                                       (project-name *current-project*)
+                                       "Project"))
+                         (:search (format nil "Search: ~A" (or *search-query* "")))
+                         (:tag-filter (format nil "Tag: ~A" (or *filter-tag* "")))
+                         (:tasks "Tasks")
+                         (:agenda "Agenda")
+                         (:go-results "Jump")
+                         (t "Home")))
+           (task-count (length (db-query "SELECT id FROM tasks
+                                          WHERE deleted_at IS NULL
+                                            AND status IN ('todo','active','waiting')")))
+           (now (subseq (local-time:format-timestring nil (local-time:now)
+                          :format '((:hour 2) #\: (:min 2)))
+                        0 5)))
+      (format pane " ~A  |  ~D open tasks  |  ~A" view-label task-count now))))
 
 ;;; ─────────────────────────────────────────────────────────────────────
 ;;; Detail pane — right side, shows selected object

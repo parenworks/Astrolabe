@@ -33,7 +33,6 @@
   (cond
     ((string-equal priority "A") +red+)
     ((string-equal priority "B") +yellow+)
-    ((string-equal priority "C") +white+)
     (t +white+)))
 
 (defun task-status-marker (status)
